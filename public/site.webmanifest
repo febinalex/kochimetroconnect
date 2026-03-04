@@ -1,0 +1,22 @@
+{
+  "name": "Kochi MetroConnect Bus Finder",
+  "short_name": "MetroConnect",
+  "description": "Live-ready Kochi MetroConnect bus timing and route helper with stop selection, map providers, and walking links.",
+  "start_url": "/kochimetroconnect/",
+  "scope": "/kochimetroconnect/",
+  "display": "standalone",
+  "background_color": "#06141f",
+  "theme_color": "#0ea5e9",
+  "icons": [
+    {
+      "src": "/kochimetroconnect/favicon.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/kochimetroconnect/apple-touch-icon.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
