@@ -17,8 +17,8 @@ export const STOPS: Record<StopId, Stop> = {
   },
   water_metro: {
     id: "water_metro",
-    shortName: "Water Metro",
-    name: "Water Metro",
+    shortName: "Kakkanad Water Metro",
+    name: "Kakkanad Water Metro",
     lat: 9.992941,
     lng: 76.351472
   },

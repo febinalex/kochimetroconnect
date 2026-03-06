@@ -1,5 +1,4 @@
 ﻿import { useEffect, useMemo, useRef, useState } from "react";
-import maplibregl from "maplibre-gl";
 import { STOPS } from "../data/stops";
 import type { Stop, StopId, UpcomingBus } from "../types/bus";
 
@@ -10,6 +9,10 @@ interface MapViewProps {
   userLocation: { lat: number; lng: number } | null;
   selectedBus: UpcomingBus | null;
   elevatedView: boolean;
+  googleMapType: "roadmap" | "satellite" | "hybrid" | "terrain";
+  osmLayer: "streets" | "topo" | "hot";
+  appleMode: "walk" | "drive" | "transit";
+  mapillaryView: "street" | "overview";
 }
 
 declare global {
@@ -22,35 +25,63 @@ declare global {
 
 const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string | undefined;
 const GOOGLE_SCRIPT_ID = "google-maps-js-sdk";
-const OSM_RASTER_STYLE: maplibregl.StyleSpecification = {
-  version: 8,
-  sources: {
-    osm: {
-      type: "raster",
-      tiles: ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
-      tileSize: 256,
-      attribution: "© OpenStreetMap contributors"
-    }
-  },
-  layers: [
-    {
-      id: "osm-raster",
-      type: "raster",
-      source: "osm"
-    }
-  ]
-};
+function getOsmStyle(layer: "streets" | "topo" | "hot"): any {
+  const tilesByLayer: Record<typeof layer, string> = {
+    streets: "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+    topo: "https://tile.opentopomap.org/{z}/{x}/{y}.png",
+    hot: "https://a.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png"
+  };
 
-export function MapView({ provider, stop, originStopId, userLocation, selectedBus, elevatedView }: MapViewProps) {
+  return {
+    version: 8,
+    sources: {
+      osm: {
+        type: "raster",
+        tiles: [tilesByLayer[layer]],
+        tileSize: 256,
+        attribution: "© OpenStreetMap contributors"
+      }
+    },
+    layers: [
+      {
+        id: "osm-raster",
+        type: "raster",
+        source: "osm"
+      }
+    ]
+  };
+}
+
+export function MapView({
+  provider,
+  stop,
+  originStopId,
+  userLocation,
+  selectedBus,
+  elevatedView,
+  googleMapType,
+  osmLayer,
+  appleMode,
+  mapillaryView
+}: MapViewProps) {
   const mapElRef = useRef<HTMLDivElement | null>(null);
 
   const googleMapRef = useRef<any | null>(null);
   const googleMarkersRef = useRef<any[]>([]);
   const googlePolylinesRef = useRef<any[]>([]);
+  const googleBusMarkerRef = useRef<any | null>(null);
 
-  const osmMapRef = useRef<maplibregl.Map | null>(null);
-  const osmMarkersRef = useRef<maplibregl.Marker[]>([]);
-  const busMarkerRef = useRef<maplibregl.Marker | null>(null);
+  const osmMapRef = useRef<any | null>(null);
+  const osmLibRef = useRef<any | null>(null);
+  const osmMarkersRef = useRef<any[]>([]);
+  const busMarkerRef = useRef<any | null>(null);
+  const osmOverlayRef = useRef<SVGSVGElement | null>(null);
+  const osmBusRouteRef = useRef<Array<{ lat: number; lng: number }>>([]);
+  const osmWalkRouteRef = useRef<Array<{ lat: number; lng: number }>>([]);
+  const osmBusRouteLineRef = useRef<SVGPolylineElement | null>(null);
+  const osmBusRouteCasingRef = useRef<SVGPolylineElement | null>(null);
+  const osmWalkRouteLineRef = useRef<SVGPolylineElement | null>(null);
+  const osmWalkRouteCasingRef = useRef<SVGPolylineElement | null>(null);
   const animationRef = useRef<number | null>(null);
   const osmAnimationTokenRef = useRef(0);
 
@@ -69,13 +100,16 @@ export function MapView({ provider, stop, originStopId, userLocation, selectedBu
 
     switch (provider) {
       case "apple":
+        var appleFlag = appleMode === "walk" ? "w" : appleMode === "drive" ? "d" : "r";
         return {
-          href: `https://maps.apple.com/?saddr=${encodeURIComponent(start)}&daddr=${encodeURIComponent(end)}&dirflg=w`,
+          href: `https://maps.apple.com/?saddr=${encodeURIComponent(start)}&daddr=${encodeURIComponent(end)}&dirflg=${appleFlag}`,
           label: "Open in Apple Maps"
         };
       case "mapillary":
         return {
-          href: `https://www.mapillary.com/app/?lat=${destinationStop.lat}&lng=${destinationStop.lng}&z=16`,
+          href: `https://www.mapillary.com/app/?lat=${destinationStop.lat}&lng=${destinationStop.lng}&z=${
+            mapillaryView === "street" ? "17" : "14"
+          }`,
           label: "Open in Mapillary"
         };
       case "openstreetmap":
@@ -91,7 +125,7 @@ export function MapView({ provider, stop, originStopId, userLocation, selectedBu
           label: "Open in Google Maps"
         };
     }
-  }, [destinationStop.lat, destinationStop.lng, provider, startPoint.lat, startPoint.lng]);
+  }, [appleMode, destinationStop.lat, destinationStop.lng, mapillaryView, provider, startPoint.lat, startPoint.lng]);
 
   useEffect(() => {
     if (provider !== "google") {
@@ -109,14 +143,14 @@ export function MapView({ provider, stop, originStopId, userLocation, selectedBu
     setError(null);
     void loadGoogleMapsScript(GOOGLE_MAPS_API_KEY)
       .then(() => {
-        if (!mapElRef.current || !window.google) {
+        if (!mapElRef.current || !window.google || typeof window.google.maps?.Map !== "function") {
           throw new Error("Google Maps SDK did not initialize.");
         }
 
         const map = new window.google.maps.Map(mapElRef.current, {
           center: { lat: stop.lat, lng: stop.lng },
           zoom: 14,
-          mapTypeId: elevatedView ? "satellite" : "roadmap",
+          mapTypeId: googleMapType,
           disableDefaultUI: false,
           streetViewControl: false,
           mapTypeControl: false,
@@ -137,7 +171,7 @@ export function MapView({ provider, stop, originStopId, userLocation, selectedBu
       googleMapRef.current = null;
       setGoogleReady(false);
     };
-  }, [elevatedView, provider, stop.lat, stop.lng]);
+  }, [googleMapType, provider, stop.lat, stop.lng]);
 
   useEffect(() => {
     if (provider !== "openstreetmap") {
@@ -147,30 +181,60 @@ export function MapView({ provider, stop, originStopId, userLocation, selectedBu
     if (!mapElRef.current) {
       return;
     }
+    let cancelled = false;
+    let map: any | null = null;
+    let syncOverlay: (() => void) | null = null;
 
-    const map = new maplibregl.Map({
-      container: mapElRef.current,
-      style: OSM_RASTER_STYLE,
-      center: [stop.lng, stop.lat],
-      zoom: 13,
-      pitch: elevatedView ? 40 : 0,
-      bearing: elevatedView ? 12 : 0,
-      attributionControl: false
-    });
+    void (async () => {
+      const { default: maplibregl } = await import("maplibre-gl");
+      await import("maplibre-gl/dist/maplibre-gl.css");
+      if (cancelled || !mapElRef.current) {
+        return;
+      }
 
-    map.addControl(new maplibregl.NavigationControl({ showCompass: true }), "top-right");
-    osmMapRef.current = map;
+      osmLibRef.current = maplibregl;
+      map = new maplibregl.Map({
+        container: mapElRef.current,
+        style: getOsmStyle(osmLayer),
+        center: [stop.lng, stop.lat],
+        zoom: 13,
+        pitch: elevatedView ? 40 : 0,
+        bearing: elevatedView ? 12 : 0,
+        attributionControl: false
+      });
 
-    const onLoad = () => setOsmReady(true);
-    map.on("load", onLoad);
+      map.addControl(new maplibregl.NavigationControl({ showCompass: true }), "top-right");
+      osmMapRef.current = map;
+
+      syncOverlay = () => {
+        refreshOsmOverlay();
+      };
+
+      const onLoad = () => {
+        setOsmReady(true);
+        if (syncOverlay) {
+          syncOverlay();
+        }
+      };
+      map.on("load", onLoad);
+      map.on("render", syncOverlay);
+      map.on("move", syncOverlay);
+      map.on("resize", syncOverlay);
+    })();
 
     return () => {
+      cancelled = true;
       clearOsmArtifacts();
-      map.remove();
+      if (map && syncOverlay) {
+        map.off("render", syncOverlay);
+        map.off("move", syncOverlay);
+        map.off("resize", syncOverlay);
+        map.remove();
+      }
       osmMapRef.current = null;
       setOsmReady(false);
     };
-  }, [elevatedView, provider, stop.lat, stop.lng]);
+  }, [elevatedView, osmLayer, provider, stop.lat, stop.lng]);
 
   useEffect(() => {
     if (provider !== "google" || !googleReady || !window.google || !googleMapRef.current) {
@@ -181,6 +245,7 @@ export function MapView({ provider, stop, originStopId, userLocation, selectedBu
     const map = googleMapRef.current;
     const google = window.google;
     const bounds = new google.maps.LatLngBounds();
+    let cancelled = false;
 
     if (userLocation) {
       const userMarker = new google.maps.Marker({
@@ -233,52 +298,73 @@ export function MapView({ provider, stop, originStopId, userLocation, selectedBu
     googleMarkersRef.current.push(destinationMarker);
     bounds.extend({ lat: destinationStop.lat, lng: destinationStop.lng });
 
-    const routePoints = selectedBus
-      ? getBusRouteStops(selectedBus).map((stopId) => ({ lat: STOPS[stopId].lat, lng: STOPS[stopId].lng }))
-      : [{ lat: originStop.lat, lng: originStop.lng }, { lat: destinationStop.lat, lng: destinationStop.lng }];
+    void (async () => {
+      const baseRoutePoints = selectedBus
+        ? getBusRouteStops(selectedBus).map((stopId) => ({ lat: STOPS[stopId].lat, lng: STOPS[stopId].lng }))
+        : [{ lat: originStop.lat, lng: originStop.lng }, { lat: destinationStop.lat, lng: destinationStop.lng }];
 
-    const busLine = new google.maps.Polyline({
-      map,
-      path: routePoints,
-      strokeColor: "#1d4ed8",
-      strokeOpacity: 0.95,
-      strokeWeight: 6,
-      geodesic: true
-    });
-    googlePolylinesRef.current.push(busLine);
-
-    if (selectedBus) {
-      startGoogleBusAnimation(map, densifyPath(routePoints));
-    }
-
-    if (userLocation) {
-      const walkLine = new google.maps.Polyline({
-        map,
-        path: [userLocation, { lat: originStop.lat, lng: originStop.lng }],
-        strokeColor: "#f59e0b",
-        strokeOpacity: 0.9,
-        strokeWeight: 3,
-        icons: [
-          {
-            icon: {
-              path: "M 0,-1 0,1",
-              strokeOpacity: 1,
-              scale: 3
-            },
-            offset: "0",
-            repeat: "12px"
-          }
-        ]
-      });
-      googlePolylinesRef.current.push(walkLine);
-    }
-
-    map.fitBounds(bounds);
-    window.google.maps.event.addListenerOnce(map, "bounds_changed", () => {
-      if (map.getZoom() > 17) {
-        map.setZoom(17);
+      const busRoute = await fetchOsrmPath(selectedBus ? "driving" : "walking", baseRoutePoints);
+      const routePoints = busRoute.path.length >= 2 ? busRoute.path : baseRoutePoints;
+      if (cancelled) {
+        return;
       }
-    });
+
+      const busLine = new google.maps.Polyline({
+        map,
+        path: routePoints,
+        strokeColor: "#1d4ed8",
+        strokeOpacity: 0.95,
+        strokeWeight: 6,
+        geodesic: true
+      });
+      googlePolylinesRef.current.push(busLine);
+      routePoints.forEach((point) => bounds.extend(point));
+
+      if (selectedBus) {
+        startGoogleBusAnimation(map, densifyPath(routePoints));
+      }
+
+      if (userLocation) {
+        const walkRoute = await fetchOsrmPath("walking", [userLocation, { lat: originStop.lat, lng: originStop.lng }]);
+        const walkPoints =
+          walkRoute.path.length >= 2 ? walkRoute.path : [userLocation, { lat: originStop.lat, lng: originStop.lng }];
+        if (!cancelled) {
+          const walkLine = new google.maps.Polyline({
+            map,
+            path: walkPoints,
+            strokeColor: "#f59e0b",
+            strokeOpacity: 0.9,
+            strokeWeight: 3,
+            icons: [
+              {
+                icon: {
+                  path: "M 0,-1 0,1",
+                  strokeOpacity: 1,
+                  scale: 3
+                },
+                offset: "0",
+                repeat: "12px"
+              }
+            ]
+          });
+          googlePolylinesRef.current.push(walkLine);
+          walkPoints.forEach((point) => bounds.extend(point));
+        }
+      }
+
+      if (!cancelled) {
+        map.fitBounds(bounds);
+        window.google.maps.event.addListenerOnce(map, "bounds_changed", () => {
+          if (map.getZoom() > 17) {
+            map.setZoom(17);
+          }
+        });
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
   }, [destinationStop.lat, destinationStop.lng, destinationStop.name, googleReady, originStopId, provider, selectedBus, userLocation]);
 
   useEffect(() => {
@@ -287,6 +373,10 @@ export function MapView({ provider, stop, originStopId, userLocation, selectedBu
     }
 
     const map = osmMapRef.current;
+    const maplibregl = osmLibRef.current;
+    if (!maplibregl) {
+      return;
+    }
     clearOsmArtifacts();
 
     const bounds = new maplibregl.LngLatBounds();
@@ -319,58 +409,46 @@ export function MapView({ provider, stop, originStopId, userLocation, selectedBu
     void (async () => {
       if (selectedBus) {
         const routeStops = getBusRouteStops(selectedBus).map((stopId) => ({ lat: STOPS[stopId].lat, lng: STOPS[stopId].lng }));
-        const initialBusPath = routeStops.length >= 2 ? routeStops : [startPoint, { lat: destinationStop.lat, lng: destinationStop.lng }];
-        addOrUpdateLine(map, "bus-route", initialBusPath.map((p) => [p.lng, p.lat]), "#1d4ed8", 6);
-        startOsmBusAnimation(map, densifyPath(initialBusPath));
-        initialBusPath.forEach((point) => bounds.extend([point.lng, point.lat]));
+        osmBusRouteRef.current = [];
+        osmWalkRouteRef.current = [];
+        refreshOsmOverlay();
 
-        const busPath = await fetchOsrmPath("driving", routeStops);
-        const safeBusPath = busPath.length >= 2 ? busPath : routeStops;
+        const busRoute = await fetchOsrmPath("driving", routeStops);
+        const safeBusPath = busRoute.path.length >= 2 ? busRoute.path : routeStops;
         if (cancelled) {
           return;
         }
-        addOrUpdateLine(map, "bus-route", safeBusPath.map((p) => [p.lng, p.lat]), "#1d4ed8", 6);
+        osmBusRouteRef.current = safeBusPath;
+        refreshOsmOverlay();
+        startOsmBusAnimation(map, densifyPath(safeBusPath));
         safeBusPath.forEach((point) => bounds.extend([point.lng, point.lat]));
 
         if (userLocation) {
           const initialWalkToStop = [userLocation, { lat: originStop.lat, lng: originStop.lng }];
-          addOrUpdateLine(
-            map,
-            "walk-route",
-            initialWalkToStop.map((p) => [p.lng, p.lat]),
-            "#f59e0b",
-            4,
-            [2, 2]
-          );
-          initialWalkToStop.forEach((point) => bounds.extend([point.lng, point.lat]));
 
-          const walkToStop = await fetchOsrmPath("walking", initialWalkToStop);
+          const walkToStopRoute = await fetchOsrmPath("walking", initialWalkToStop);
           const safeWalkToStop =
-            walkToStop.length >= 2 ? walkToStop : [userLocation, { lat: originStop.lat, lng: originStop.lng }];
+            walkToStopRoute.path.length >= 2 ? walkToStopRoute.path : [userLocation, { lat: originStop.lat, lng: originStop.lng }];
           if (!cancelled) {
-            addOrUpdateLine(
-              map,
-              "walk-route",
-              safeWalkToStop.map((p) => [p.lng, p.lat]),
-              "#f59e0b",
-              4,
-              [2, 2]
-            );
+            osmWalkRouteRef.current = safeWalkToStop;
+            refreshOsmOverlay();
             safeWalkToStop.forEach((point) => bounds.extend([point.lng, point.lat]));
           }
         }
       } else {
         const initialWalkPath = [startPoint, { lat: destinationStop.lat, lng: destinationStop.lng }];
-        addOrUpdateLine(map, "walk-route", initialWalkPath.map((p) => [p.lng, p.lat]), "#0ea5e9", 4, [2, 2]);
-        initialWalkPath.forEach((point) => bounds.extend([point.lng, point.lat]));
+        osmBusRouteRef.current = [];
+        osmWalkRouteRef.current = [];
+        refreshOsmOverlay();
 
-        const walkPath = await fetchOsrmPath("walking", initialWalkPath);
+        const walkRoute = await fetchOsrmPath("walking", initialWalkPath);
         const safeWalkPath =
-          walkPath.length >= 2 ? walkPath : [startPoint, { lat: destinationStop.lat, lng: destinationStop.lng }];
+          walkRoute.path.length >= 2 ? walkRoute.path : [startPoint, { lat: destinationStop.lat, lng: destinationStop.lng }];
         if (cancelled) {
           return;
         }
-        addOrUpdateLine(map, "walk-route", safeWalkPath.map((p) => [p.lng, p.lat]), "#0ea5e9", 4, [2, 2]);
+        osmWalkRouteRef.current = safeWalkPath;
+        refreshOsmOverlay();
         safeWalkPath.forEach((point) => bounds.extend([point.lng, point.lat]));
       }
 
@@ -424,7 +502,17 @@ export function MapView({ provider, stop, originStopId, userLocation, selectedBu
 
   return (
     <div>
-      <div className="map-canvas" ref={mapElRef} aria-label="Map view" />
+      <div className="map-stage">
+        <div className="map-canvas" ref={mapElRef} aria-label="Map view" />
+        {provider === "openstreetmap" ? (
+          <svg ref={osmOverlayRef} className="osm-route-overlay" aria-hidden="true">
+            <polyline ref={osmWalkRouteCasingRef} className="osm-walk-route-casing" />
+            <polyline ref={osmWalkRouteLineRef} className="osm-walk-route-line" />
+            <polyline ref={osmBusRouteCasingRef} className="osm-bus-route-casing" />
+            <polyline ref={osmBusRouteLineRef} className="osm-bus-route-line" />
+          </svg>
+        ) : null}
+      </div>
       <p className="map-link">
         <a href={providerLink.href} target="_blank" rel="noreferrer">
           {providerLink.label}
@@ -437,6 +525,11 @@ export function MapView({ provider, stop, originStopId, userLocation, selectedBu
     if (animationRef.current !== null) {
       window.clearInterval(animationRef.current);
       animationRef.current = null;
+    }
+
+    if (googleBusMarkerRef.current) {
+      googleBusMarkerRef.current.setMap(null);
+      googleBusMarkerRef.current = null;
     }
 
     googleMarkersRef.current.forEach((marker) => marker.setMap(null));
@@ -466,38 +559,43 @@ export function MapView({ provider, stop, originStopId, userLocation, selectedBu
       mapElRef.current.querySelectorAll(".bus-moving-marker").forEach((node) => node.remove());
     }
 
-    if (osmMapRef.current) {
-      ["walk-route", "bus-route"].forEach((id) => {
-        if (osmMapRef.current?.getLayer(`${id}-layer`)) {
-          osmMapRef.current.removeLayer(`${id}-layer`);
-        }
-        if (osmMapRef.current?.getSource(`${id}-source`)) {
-          osmMapRef.current.removeSource(`${id}-source`);
-        }
-      });
-    }
+    osmBusRouteRef.current = [];
+    osmWalkRouteRef.current = [];
+    refreshOsmOverlay();
   }
 
   function startGoogleBusAnimation(map: any, path: Array<{ lat: number; lng: number }>): void {
     const google = window.google;
+
+    if (googleBusMarkerRef.current) {
+      googleBusMarkerRef.current.setMap(null);
+      googleBusMarkerRef.current = null;
+    }
+
     const marker = new google.maps.Marker({
       map,
       position: path[0],
       label: { text: "🚌", fontSize: "18px" },
       icon: { path: google.maps.SymbolPath.CIRCLE, scale: 0 }
     });
+    googleBusMarkerRef.current = marker;
 
     let index = 0;
+    const step = path.length > 1200 ? 8 : path.length > 600 ? 6 : path.length > 300 ? 4 : 2;
     animationRef.current = window.setInterval(() => {
       marker.setPosition(path[index]);
-      index += 1;
+      index += step;
       if (index >= path.length) {
         index = 0;
       }
-    }, 280);
+    }, 55);
   }
 
-  function startOsmBusAnimation(map: maplibregl.Map, path: Array<{ lat: number; lng: number }>): void {
+  function startOsmBusAnimation(map: any, path: Array<{ lat: number; lng: number }>): void {
+    const maplibregl = osmLibRef.current;
+    if (!maplibregl) {
+      return;
+    }
     const token = osmAnimationTokenRef.current + 1;
     osmAnimationTokenRef.current = token;
 
@@ -527,6 +625,7 @@ export function MapView({ provider, stop, originStopId, userLocation, selectedBu
     busMarkerRef.current = marker;
 
     let index = 0;
+    const step = path.length > 1200 ? 8 : path.length > 600 ? 6 : path.length > 300 ? 4 : 2;
     animationRef.current = window.setInterval(() => {
       if (osmAnimationTokenRef.current !== token) {
         if (animationRef.current !== null) {
@@ -540,12 +639,60 @@ export function MapView({ provider, stop, originStopId, userLocation, selectedBu
       if (!busMarkerRef.current) {
         return;
       }
+
       busMarkerRef.current.setLngLat([path[index].lng, path[index].lat]);
-      index += 1;
+      index += step;
       if (index >= path.length) {
         index = 0;
       }
-    }, 280);
+    }, 55);
+  }
+
+  function refreshOsmOverlay(): void {
+    const map = osmMapRef.current;
+    const svg = osmOverlayRef.current;
+    if (!map || !svg) {
+      return;
+    }
+
+    const canvas = map.getCanvas();
+    const width = canvas.clientWidth;
+    const height = canvas.clientHeight;
+    if (width <= 0 || height <= 0) {
+      return;
+    }
+
+    svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
+    svg.setAttribute("width", `${width}`);
+    svg.setAttribute("height", `${height}`);
+
+    const projectPoints = (coords: Array<{ lat: number; lng: number }>): string => {
+      if (coords.length < 2) {
+        return "";
+      }
+      return coords
+        .map((coord) => {
+          const point = map.project([coord.lng, coord.lat]);
+          return `${point.x},${point.y}`;
+        })
+        .join(" ");
+    };
+
+    const walkPoints = projectPoints(osmWalkRouteRef.current);
+    const busPoints = projectPoints(osmBusRouteRef.current);
+
+    if (osmWalkRouteCasingRef.current) {
+      osmWalkRouteCasingRef.current.setAttribute("points", walkPoints);
+    }
+    if (osmWalkRouteLineRef.current) {
+      osmWalkRouteLineRef.current.setAttribute("points", walkPoints);
+    }
+    if (osmBusRouteCasingRef.current) {
+      osmBusRouteCasingRef.current.setAttribute("points", busPoints);
+    }
+    if (osmBusRouteLineRef.current) {
+      osmBusRouteLineRef.current.setAttribute("points", busPoints);
+    }
   }
 }
 
@@ -557,6 +704,10 @@ function getBusRouteStops(bus: UpcomingBus): StopId[] {
 
 function densifyPath(path: Array<{ lat: number; lng: number }>, stepsPerSegment = 28): Array<{ lat: number; lng: number }> {
   if (path.length < 2) {
+    return path;
+  }
+
+  if (path.length > 160) {
     return path;
   }
 
@@ -573,85 +724,71 @@ function densifyPath(path: Array<{ lat: number; lng: number }>, stepsPerSegment 
   return out;
 }
 
+interface RoutingResult {
+  path: Array<{ lat: number; lng: number }>;
+  source: string;
+}
+
 async function fetchOsrmPath(
   profile: "walking" | "driving",
   points: Array<{ lat: number; lng: number }>
-): Promise<Array<{ lat: number; lng: number }>> {
+): Promise<RoutingResult> {
   if (points.length < 2) {
-    return points;
+    return { path: points, source: "insufficient-points" };
   }
 
   const coordinateText = points.map((point) => `${point.lng},${point.lat}`).join(";");
-  try {
-    const response = await fetch(
-      `https://router.project-osrm.org/route/v1/${profile}/${coordinateText}?overview=full&geometries=geojson`
-    );
+  const urls = getRoutingUrls(profile, coordinateText);
 
-    if (!response.ok) {
-      throw new Error("routing failed");
-    }
-
-    const data = (await response.json()) as {
-      routes?: Array<{ geometry?: { coordinates?: [number, number][] } }>;
-    };
-
-    const routeCoordinates = data.routes?.[0]?.geometry?.coordinates;
-    if (!routeCoordinates || routeCoordinates.length < 2) {
-      throw new Error("empty route");
-    }
-
-    return routeCoordinates.map((item) => ({ lat: item[1], lng: item[0] }));
-  } catch {
-    return points;
-  }
-}
-
-function addOrUpdateLine(
-  map: maplibregl.Map,
-  id: string,
-  coordinates: number[][],
-  color: string,
-  width: number,
-  dasharray?: number[]
-): void {
-  const sourceId = `${id}-source`;
-  const layerId = `${id}-layer`;
-
-  const data: GeoJSON.Feature<GeoJSON.LineString> = {
-    type: "Feature",
-    properties: {},
-    geometry: {
-      type: "LineString",
-      coordinates
-    }
-  };
-
-  const existingSource = map.getSource(sourceId) as maplibregl.GeoJSONSource | undefined;
-  if (existingSource) {
-    existingSource.setData(data);
-  } else {
-    map.addSource(sourceId, { type: "geojson", data });
-    map.addLayer({
-      id: layerId,
-      type: "line",
-      source: sourceId,
-      paint: {
-        "line-color": color,
-        "line-width": width,
-        "line-opacity": 0.95,
-        ...(dasharray ? { "line-dasharray": dasharray } : {})
-      },
-      layout: {
-        "line-cap": "round",
-        "line-join": "round"
+  for (const url of urls) {
+    try {
+      const response = await fetch(url);
+      if (!response.ok) {
+        continue;
       }
-    });
+
+      const data = (await response.json()) as {
+        routes?: Array<{ geometry?: { coordinates?: [number, number][] } }>;
+      };
+
+      const routeCoordinates = data.routes?.[0]?.geometry?.coordinates;
+      if (!routeCoordinates || routeCoordinates.length < 2) {
+        continue;
+      }
+
+      return {
+        path: routeCoordinates.map((item) => ({ lat: item[1], lng: item[0] })),
+        source: url.includes("routing.openstreetmap.de")
+          ? profile === "driving"
+            ? "fossgis-car"
+            : "fossgis-foot"
+          : profile === "driving"
+            ? "project-osrm-car"
+            : "project-osrm-foot"
+      };
+    } catch {
+      continue;
+    }
   }
 
-  if (map.getLayer(layerId)) {
-    map.moveLayer(layerId);
-  }
+  return { path: points, source: "fallback-straight" };
 }
+
+function getRoutingUrls(profile: "walking" | "driving", coordinateText: string): string[] {
+  const endpoints =
+    profile === "driving"
+      ? [
+          `https://routing.openstreetmap.de/routed-car/route/v1/driving/${coordinateText}?overview=full&geometries=geojson`,
+          `https://router.project-osrm.org/route/v1/driving/${coordinateText}?overview=full&geometries=geojson`
+        ]
+      : [
+          `https://routing.openstreetmap.de/routed-foot/route/v1/walking/${coordinateText}?overview=full&geometries=geojson`,
+          `https://router.project-osrm.org/route/v1/walking/${coordinateText}?overview=full&geometries=geojson`
+        ];
+
+  return endpoints;
+}
+
 
 async function loadGoogleMapsScript(apiKey: string): Promise<void> {
   window.__gmAuthFailed = false;
@@ -659,7 +796,7 @@ async function loadGoogleMapsScript(apiKey: string): Promise<void> {
     window.__gmAuthFailed = true;
   };
 
-  if (window.google?.maps) {
+  if (typeof window.google?.maps?.Map === "function") {
     return;
   }
 
@@ -694,7 +831,7 @@ function waitForGoogleMaps(): Promise<void> {
         return;
       }
 
-      if (window.google?.maps) {
+      if (typeof window.google?.maps?.Map === "function") {
         window.clearInterval(timer);
         resolve();
         return;

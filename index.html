@@ -3,14 +3,14 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Kochi MetroConnect Bus Finder | Bus Routes, Stops, and Timings</title>
+    <title>Kochi Metro Connect Timetable | Kochi MetroConnect Bus Finder</title>
     <meta
       name="description"
-      content="Find Kochi MetroConnect bus routes, nearest stops, upcoming departures, and map directions. Supports Google Maps and OpenStreetMap with stop-wise trip details."
+      content="Kochi Metro Connect timetable and route finder. Check Kochi MetroConnect bus timings, nearest stops, upcoming departures, and map directions."
     />
     <meta
       name="keywords"
-      content="Kochi MetroConnect, Kochi bus timings, Metro feeder bus, Kochi bus route map, Infopark bus, Water Metro bus"
+      content="Kochi Metro Connect, Kochi MetroConnect, Metro Connect Timetable, Kochi bus timings, Metro feeder bus, Kochi bus route map, Infopark bus, Water Metro bus"
     />
     <meta name="robots" content="index, follow, max-image-preview:large" />
     <meta name="author" content="Kochi MetroConnect Bus Finder" />
@@ -37,8 +37,8 @@
 
     <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
     <link rel="icon" type="image/png" href="./favicon.png" />
-    <link rel="apple-touch-icon" href="./apple-touch-icon.png" />
-    <link rel="manifest" href="./site.webmanifest" />
+    <link rel="apple-touch-icon" href="./Metroconnect.png" />
+    <link rel="manifest" href="./site.webmanifest?v=2" />
 
     <script type="application/ld+json">
       {
@@ -53,9 +53,34 @@
         }
       }
     </script>
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "WebPage",
+        "name": "Kochi Metro Connect Timetable",
+        "url": "https://febinalex.github.io/kochimetroconnect/",
+        "description": "Kochi Metro Connect timetable and route finder with stop-wise departures.",
+        "about": ["Kochi Metro Connect", "Metro Connect Timetable", "Kochi bus timings"]
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>
+    <script>
+      // Compatibility helper for some transpiled dependencies on older/stale bundles.
+      // Safe no-op if already provided by the bundle runtime.
+      if (typeof __publicField === "undefined") {
+        var __publicField = function (obj, key, value) {
+          Object.defineProperty(obj, key, {
+            enumerable: true,
+            configurable: true,
+            writable: true,
+            value
+          });
+          return value;
+        };
+      }
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

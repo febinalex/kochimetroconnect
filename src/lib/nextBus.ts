@@ -1,10 +1,11 @@
-import type { RouteSchedule, StopId, TimingRow, UpcomingBus } from "../types/bus";
+import type { MissedBusInfo, RouteSchedule, StopId, TimingRow, UpcomingBus } from "../types/bus";
 import { parseTimeToMinutes } from "./timeUtils";
 
 const STOP_NAME_TO_ID: Record<string, StopId> = {
   "infopark phase ii": "infopark_phase_ii",
   "infopark phase i": "infopark_phase_i",
   "water metro": "water_metro",
+  "kakkanad water metro": "water_metro",
   "civil station": "civil_station",
   "kalamassery metro": "kalamassery_metro"
 };
@@ -96,4 +97,55 @@ export function getUpcomingBuses(
   });
 
   return results.sort((a, b) => a.minutesAway - b.minutesAway).slice(0, limit);
+}
+
+export function getLastMissedBus(
+  nowMinutes: number,
+  originStop: StopId,
+  routes: RouteSchedule[],
+  windowMinutes = 20
+): MissedBusInfo | null {
+  let candidate: MissedBusInfo | null = null;
+
+  routes.forEach((routeSchedule) => {
+    const routeStops = parseRouteStops(routeSchedule.route);
+    const originIndex = routeStops.indexOf(originStop);
+
+    if (originIndex < 0) {
+      return;
+    }
+
+    routeSchedule.timings.forEach((timing) => {
+      const originTime = timing[originStop];
+      if (!originTime) {
+        return;
+      }
+
+      const departureMinutes = parseTimeToMinutes(originTime);
+      const minutesAgo = nowMinutes - departureMinutes;
+      if (minutesAgo < 1 || minutesAgo > windowMinutes) {
+        return;
+      }
+
+      const destinationStop = getLastReachableStop(timing, routeStops, originIndex);
+      const destinationTime = timing[destinationStop];
+      if (!destinationTime || destinationStop === originStop) {
+        return;
+      }
+
+      const missed: MissedBusInfo = {
+        routeName: routeSchedule.route,
+        originTime,
+        destinationStop,
+        destinationTime,
+        minutesAgo
+      };
+
+      if (!candidate || missed.minutesAgo < candidate.minutesAgo) {
+        candidate = missed;
+      }
+    });
+  });
+
+  return candidate;
 }

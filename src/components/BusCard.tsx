@@ -1,11 +1,12 @@
 ﻿import type { UpcomingBus } from "../types/bus";
 import { STOPS } from "../data/stops";
-import { formatMinutesAway } from "../lib/timeUtils";
+import { formatTimeAway, getSecondsUntilTime } from "../lib/timeUtils";
 
 interface BusCardProps {
   bus: UpcomingBus;
   selected: boolean;
   onSelect: (bus: UpcomingBus) => void;
+  nowMs: number;
 }
 
 function getRouteSegment(bus: UpcomingBus): string {
@@ -18,15 +19,18 @@ function getRouteSegment(bus: UpcomingBus): string {
     .join("  →  ");
 }
 
-export function BusCard({ bus, selected, onSelect }: BusCardProps) {
+export function BusCard({ bus, selected, onSelect, nowMs }: BusCardProps) {
+  const secondsAway = getSecondsUntilTime(bus.originTime, new Date(nowMs));
+  const timeAway = formatTimeAway(secondsAway);
+
   return (
     <button
       type="button"
       className={`card bus-card ${selected ? "selected-bus" : ""}`}
       onClick={() => onSelect(bus)}
     >
-      <p className="pill">{formatMinutesAway(bus.minutesAway)}</p>
-      <h3>{STOPS[bus.destinationStop].name}</h3>
+      <p className="pill">{timeAway}</p>
+      <h3>To {STOPS[bus.destinationStop].shortName}</h3>
       <p>
         {bus.originTime} to {bus.destinationTime}
       </p>

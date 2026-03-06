@@ -39,3 +39,11 @@ export interface UpcomingBus {
   destinationTime: string;
   minutesAway: number;
 }
+
+export interface MissedBusInfo {
+  routeName: string;
+  originTime: string;
+  destinationStop: StopId;
+  destinationTime: string;
+  minutesAgo: number;
+}
