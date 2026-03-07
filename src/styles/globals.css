@@ -46,6 +46,43 @@ body[data-theme="light"] {
   padding: 1.2rem 0 2.2rem;
 }
 
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(4, 10, 20, 0.68);
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  z-index: 120;
+}
+
+.modal-card {
+  width: min(420px, 100%);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--panel);
+  box-shadow: 0 22px 48px -24px rgba(0, 0, 0, 0.7);
+  padding: 1rem;
+}
+
+.modal-card h2 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.modal-card p {
+  margin: 0.55rem 0 0;
+  color: var(--ink-soft);
+  line-height: 1.45;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.65rem;
+  margin-top: 1rem;
+}
+
 .hero {
   padding: 0.8rem 0 1.2rem;
   position: relative;
@@ -55,7 +92,7 @@ body[data-theme="light"] {
 .hero::after {
   content: "";
   position: absolute;
-  right: 0.5rem;
+  right: 3.9rem;
   top: 0.25rem;
   width: 82px;
   height: 82px;
@@ -66,7 +103,7 @@ body[data-theme="light"] {
 
 .theme-toggle {
   position: absolute;
-  right: 6.2rem;
+  right: 0.55rem;
   top: 0.2rem;
   border: 1px solid var(--line);
   background: var(--panel);
@@ -127,6 +164,97 @@ body[data-theme="light"] {
   padding: 1rem;
 }
 
+.faq-card {
+  margin-top: 1rem;
+  padding: 1rem;
+}
+
+.faq-head h2 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.faq-head p {
+  margin: 0.45rem 0 0;
+  color: var(--ink-soft);
+  line-height: 1.45;
+}
+
+.faq-list {
+  margin-top: 0.8rem;
+  display: grid;
+  gap: 0.7rem;
+}
+
+.faq-item {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: transparent;
+  overflow: hidden;
+}
+
+.faq-item summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 0.95rem 1rem;
+  font-weight: 700;
+  color: var(--ink);
+  position: relative;
+  padding-right: 2.8rem;
+}
+
+.faq-item summary::-webkit-details-marker {
+  display: none;
+}
+
+.faq-item summary::after {
+  content: "+";
+  position: absolute;
+  right: 1rem;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--ink-soft);
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+
+.faq-item[open] summary::after {
+  content: "−";
+}
+
+.faq-answer {
+  border-top: 1px solid var(--line);
+  padding: 0.85rem 1rem 1rem;
+}
+
+.faq-answer p,
+.faq-answer li {
+  color: var(--ink-soft);
+  line-height: 1.5;
+}
+
+.faq-answer p {
+  margin: 0 0 0.65rem;
+}
+
+.faq-answer p:last-child {
+  margin-bottom: 0;
+}
+
+.faq-answer ul {
+  margin: 0 0 0.75rem 1.1rem;
+  padding: 0;
+}
+
+.faq-answer a {
+  color: var(--cyan);
+  text-decoration: none;
+}
+
+.faq-answer a:hover {
+  text-decoration: underline;
+}
+
 .about-card h2 {
   margin: 0 0 0.45rem;
   font-size: 1.05rem;
@@ -166,6 +294,17 @@ body[data-theme="light"] {
   background: var(--cyan);
   color: #ffffff;
   font-weight: 800;
+  padding: 0.72rem 1rem;
+  cursor: pointer;
+}
+
+.secondary-btn {
+  margin-top: 0.65rem;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: transparent;
+  color: var(--ink);
+  font-weight: 700;
   padding: 0.72rem 1rem;
   cursor: pointer;
 }
@@ -621,6 +760,15 @@ body[data-theme="light"] .provider-toggle .active-provider {
   background: rgba(37, 99, 235, 0.08);
 }
 
+body[data-theme="light"] .modal-card {
+  background: #ffffff;
+  border-color: #e5e7eb;
+}
+
+body[data-theme="light"] .modal-card p {
+  color: #36516a;
+}
+
 body[data-theme="light"] .hub-item {
   background: #ffffff;
   border-color: #e5e7eb;
@@ -633,10 +781,26 @@ body[data-theme="light"] .hero h1 {
 body[data-theme="light"] .hero p,
 body[data-theme="light"] .hub-item p,
 body[data-theme="light"] .about-card p,
+body[data-theme="light"] .faq-head p,
+body[data-theme="light"] .faq-answer p,
+body[data-theme="light"] .faq-answer li,
 body[data-theme="light"] .map-meta p,
 body[data-theme="light"] .section-head p,
 body[data-theme="light"] .selector-wrap span {
   color: #36516a;
+}
+
+body[data-theme="light"] .faq-item {
+  background: #ffffff;
+  border-color: #e5e7eb;
+}
+
+body[data-theme="light"] .faq-item summary {
+  color: #0f2a3f;
+}
+
+body[data-theme="light"] .faq-answer {
+  border-top-color: #e5e7eb;
 }
 
 body[data-theme="light"] .bus-card {
@@ -699,7 +863,9 @@ body[data-theme="light"] .missed-note strong {
 
 @media (max-width: 700px) {
   .hero {
-    padding-top: 3rem;
+    padding-top: 0.8rem;
+    padding-right: 7.9rem;
+    min-height: 88px;
   }
 
   .theme-toggle {
@@ -711,7 +877,7 @@ body[data-theme="light"] .missed-note strong {
   .hero::after {
     width: 64px;
     height: 64px;
-    right: 3.2rem;
+    right: 3.7rem;
     top: 0.5rem;
     opacity: 0.78;
   }

@@ -1,9 +1,24 @@
 export type StopId =
   | "infopark_phase_ii"
   | "infopark_phase_i"
-  | "water_metro"
+  | "kakkanad_water_metro"
   | "civil_station"
-  | "kalamassery_metro";
+  | "kalamassery_metro"
+  | "aluva_metro"
+  | "rajagiri_hospital"
+  | "cial_airport"
+  | "kadavanthra_metro_station"
+  | "manorama_junction"
+  | "sports_academy_west"
+  | "regional_passport_office"
+  | "justice_krishna_iyer_road"
+  | "st_joseph_church_kadavanthra"
+  | "bhavans_vidya_mandir_kadavanthra"
+  | "kadavanthra_junction"
+  | "thripunithura_metro_station"
+  | "high_court_junction"
+  | "south_metro_ernakulam"
+  | "ernakulam_south_railway_station";
 
 export interface Stop {
   id: StopId;
@@ -13,13 +28,7 @@ export interface Stop {
   lng: number;
 }
 
-export interface TimingRow {
-  kalamassery_metro: string | null;
-  civil_station: string | null;
-  water_metro: string | null;
-  infopark_phase_i: string | null;
-  infopark_phase_ii: string | null;
-}
+export type TimingRow = Partial<Record<StopId, string | null>>;
 
 export interface RouteSchedule {
   route: string;
@@ -34,8 +43,10 @@ export interface UpcomingBus {
   routeName: string;
   routeStops: StopId[];
   originStop: StopId;
+  originIndex: number;
   originTime: string;
   destinationStop: StopId;
+  destinationIndex: number;
   destinationTime: string;
   minutesAway: number;
 }

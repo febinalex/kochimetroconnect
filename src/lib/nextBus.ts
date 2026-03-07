@@ -4,10 +4,25 @@ import { parseTimeToMinutes } from "./timeUtils";
 const STOP_NAME_TO_ID: Record<string, StopId> = {
   "infopark phase ii": "infopark_phase_ii",
   "infopark phase i": "infopark_phase_i",
-  "water metro": "water_metro",
-  "kakkanad water metro": "water_metro",
+  "water metro": "kakkanad_water_metro",
+  "kakkanad water metro": "kakkanad_water_metro",
   "civil station": "civil_station",
-  "kalamassery metro": "kalamassery_metro"
+  "kalamassery metro": "kalamassery_metro",
+  "aluva metro": "aluva_metro",
+  "rajagiri hospital": "rajagiri_hospital",
+  "cial airport": "cial_airport",
+  "kadavanthra metro station": "kadavanthra_metro_station",
+  "manorama junction": "manorama_junction",
+  "sports academy west": "sports_academy_west",
+  "regional passport office": "regional_passport_office",
+  "justice krishna iyer road": "justice_krishna_iyer_road",
+  "st joseph church kadavanthra": "st_joseph_church_kadavanthra",
+  "bhavans vidya mandir kadavanthra": "bhavans_vidya_mandir_kadavanthra",
+  "kadavanthra junction": "kadavanthra_junction",
+  "thripunithura metro station": "thripunithura_metro_station",
+  "high court junction": "high_court_junction",
+  "south metro ernakulam": "south_metro_ernakulam",
+  "ernakulam south railway station": "ernakulam_south_railway_station"
 };
 
 function normalizeStopLabel(label: string): string {
@@ -15,7 +30,7 @@ function normalizeStopLabel(label: string): string {
 }
 
 function parseRouteStops(routeName: string): StopId[] {
-  const parts = routeName.includes("?") ? routeName.split("?") : routeName.split(/[?→]/g);
+  const parts = routeName.includes("?") ? routeName.split("?") : routeName.split(/[?\u2192]/g);
 
   return parts
     .map((segment) => normalizeStopLabel(segment))
@@ -23,21 +38,27 @@ function parseRouteStops(routeName: string): StopId[] {
     .filter((stopId): stopId is StopId => Boolean(stopId));
 }
 
-function getLastReachableStop(timing: TimingRow, routeStops: StopId[], originIndex: number): StopId {
+function getLastReachableStop(
+  timing: TimingRow,
+  routeStops: StopId[],
+  originIndex: number
+): { stopId: StopId; stopIndex: number } {
   let destination = routeStops[originIndex];
+  let destinationIndex = originIndex;
 
   for (let index = originIndex; index < routeStops.length; index += 1) {
     const stopId = routeStops[index];
     const stopTime = timing[stopId];
 
-    if (stopTime === null) {
+    if (stopTime == null) {
       break;
     }
 
     destination = stopId;
+    destinationIndex = index;
   }
 
-  return destination;
+  return { stopId: destination, stopIndex: destinationIndex };
 }
 
 function getMinutesAway(nowMinutes: number, departureMinutes: number): number {
@@ -73,14 +94,14 @@ export function getUpcomingBuses(
 
       const departureMinutes = parseTimeToMinutes(originTime);
       const minutesAway = getMinutesAway(nowMinutes, departureMinutes);
-      const destinationStop = getLastReachableStop(timing, routeStops, originIndex);
-      const destinationTime = timing[destinationStop];
+      const destination = getLastReachableStop(timing, routeStops, originIndex);
+      const destinationTime = timing[destination.stopId];
 
       if (!destinationTime) {
         return;
       }
 
-      if (destinationStop === originStop) {
+      if (destination.stopIndex === originIndex) {
         return;
       }
 
@@ -88,8 +109,10 @@ export function getUpcomingBuses(
         routeName: routeSchedule.route,
         routeStops,
         originStop,
+        originIndex,
         originTime,
-        destinationStop,
+        destinationStop: destination.stopId,
+        destinationIndex: destination.stopIndex,
         destinationTime,
         minutesAway
       });
@@ -127,16 +150,16 @@ export function getLastMissedBus(
         return;
       }
 
-      const destinationStop = getLastReachableStop(timing, routeStops, originIndex);
-      const destinationTime = timing[destinationStop];
-      if (!destinationTime || destinationStop === originStop) {
+      const destination = getLastReachableStop(timing, routeStops, originIndex);
+      const destinationTime = timing[destination.stopId];
+      if (!destinationTime || destination.stopIndex === originIndex) {
         return;
       }
 
       const missed: MissedBusInfo = {
         routeName: routeSchedule.route,
         originTime,
-        destinationStop,
+        destinationStop: destination.stopId,
         destinationTime,
         minutesAgo
       };

@@ -9,12 +9,27 @@ interface BusCardProps {
   nowMs: number;
 }
 
-function getRouteSegment(bus: UpcomingBus): string {
-  const originIndex = bus.routeStops.indexOf(bus.originStop);
-  const destinationIndex = bus.routeStops.indexOf(bus.destinationStop);
+function getMinimumCharge(bus: UpcomingBus): number {
+  const routeKey = bus.routeStops.join(">");
 
+  switch (routeKey) {
+    case "aluva_metro>rajagiri_hospital":
+    case "rajagiri_hospital>aluva_metro":
+      return 15;
+    case "cial_airport>aluva_metro":
+    case "aluva_metro>cial_airport":
+      return 80;
+    case "infopark_phase_ii>infopark_phase_i>thripunithura_metro_station":
+    case "thripunithura_metro_station>infopark_phase_i>infopark_phase_ii":
+      return 60;
+    default:
+      return 20;
+  }
+}
+
+function getRouteSegment(bus: UpcomingBus): string {
   return bus.routeStops
-    .slice(originIndex, destinationIndex + 1)
+    .slice(bus.originIndex, bus.destinationIndex + 1)
     .map((stopId) => STOPS[stopId].shortName)
     .join("  →  ");
 }
@@ -22,6 +37,7 @@ function getRouteSegment(bus: UpcomingBus): string {
 export function BusCard({ bus, selected, onSelect, nowMs }: BusCardProps) {
   const secondsAway = getSecondsUntilTime(bus.originTime, new Date(nowMs));
   const timeAway = formatTimeAway(secondsAway);
+  const minimumCharge = getMinimumCharge(bus);
 
   return (
     <button
@@ -35,7 +51,7 @@ export function BusCard({ bus, selected, onSelect, nowMs }: BusCardProps) {
         {bus.originTime} to {bus.destinationTime}
       </p>
       <p className="route-label">{getRouteSegment(bus)}</p>
-      <p className="fare-note">Minimum charge: ₹20</p>
+      <p className="fare-note">Minimum charge: ₹{minimumCharge}</p>
     </button>
   );
 }

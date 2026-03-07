@@ -303,7 +303,7 @@ export function MapView({
         ? getBusRouteStops(selectedBus).map((stopId) => ({ lat: STOPS[stopId].lat, lng: STOPS[stopId].lng }))
         : [{ lat: originStop.lat, lng: originStop.lng }, { lat: destinationStop.lat, lng: destinationStop.lng }];
 
-      const busRoute = await fetchOsrmPath(selectedBus ? "driving" : "walking", baseRoutePoints);
+      const busRoute = await fetchRoutePath(selectedBus ? "driving" : "walking", baseRoutePoints);
       const routePoints = busRoute.path.length >= 2 ? busRoute.path : baseRoutePoints;
       if (cancelled) {
         return;
@@ -325,7 +325,7 @@ export function MapView({
       }
 
       if (userLocation) {
-        const walkRoute = await fetchOsrmPath("walking", [userLocation, { lat: originStop.lat, lng: originStop.lng }]);
+        const walkRoute = await fetchRoutePath("walking", [userLocation, { lat: originStop.lat, lng: originStop.lng }]);
         const walkPoints =
           walkRoute.path.length >= 2 ? walkRoute.path : [userLocation, { lat: originStop.lat, lng: originStop.lng }];
         if (!cancelled) {
@@ -413,7 +413,7 @@ export function MapView({
         osmWalkRouteRef.current = [];
         refreshOsmOverlay();
 
-        const busRoute = await fetchOsrmPath("driving", routeStops);
+        const busRoute = await fetchRoutePath("driving", routeStops);
         const safeBusPath = busRoute.path.length >= 2 ? busRoute.path : routeStops;
         if (cancelled) {
           return;
@@ -426,7 +426,7 @@ export function MapView({
         if (userLocation) {
           const initialWalkToStop = [userLocation, { lat: originStop.lat, lng: originStop.lng }];
 
-          const walkToStopRoute = await fetchOsrmPath("walking", initialWalkToStop);
+          const walkToStopRoute = await fetchRoutePath("walking", initialWalkToStop);
           const safeWalkToStop =
             walkToStopRoute.path.length >= 2 ? walkToStopRoute.path : [userLocation, { lat: originStop.lat, lng: originStop.lng }];
           if (!cancelled) {
@@ -441,7 +441,7 @@ export function MapView({
         osmWalkRouteRef.current = [];
         refreshOsmOverlay();
 
-        const walkRoute = await fetchOsrmPath("walking", initialWalkPath);
+        const walkRoute = await fetchRoutePath("walking", initialWalkPath);
         const safeWalkPath =
           walkRoute.path.length >= 2 ? walkRoute.path : [startPoint, { lat: destinationStop.lat, lng: destinationStop.lng }];
         if (cancelled) {
@@ -697,9 +697,7 @@ export function MapView({
 }
 
 function getBusRouteStops(bus: UpcomingBus): StopId[] {
-  const originIndex = bus.routeStops.indexOf(bus.originStop);
-  const destinationIndex = bus.routeStops.indexOf(bus.destinationStop);
-  return bus.routeStops.slice(originIndex, destinationIndex + 1);
+  return bus.routeStops.slice(bus.originIndex, bus.destinationIndex + 1);
 }
 
 function densifyPath(path: Array<{ lat: number; lng: number }>, stepsPerSegment = 28): Array<{ lat: number; lng: number }> {
@@ -729,7 +727,7 @@ interface RoutingResult {
   source: string;
 }
 
-async function fetchOsrmPath(
+async function fetchRoutePath(
   profile: "walking" | "driving",
   points: Array<{ lat: number; lng: number }>
 ): Promise<RoutingResult> {
@@ -737,56 +735,53 @@ async function fetchOsrmPath(
     return { path: points, source: "insufficient-points" };
   }
 
-  const coordinateText = points.map((point) => `${point.lng},${point.lat}`).join(";");
-  const urls = getRoutingUrls(profile, coordinateText);
+  const url = getValhallaRouteUrl(profile, points);
 
-  for (const url of urls) {
-    try {
-      const response = await fetch(url);
-      if (!response.ok) {
-        continue;
-      }
-
-      const data = (await response.json()) as {
-        routes?: Array<{ geometry?: { coordinates?: [number, number][] } }>;
-      };
-
-      const routeCoordinates = data.routes?.[0]?.geometry?.coordinates;
-      if (!routeCoordinates || routeCoordinates.length < 2) {
-        continue;
-      }
-
-      return {
-        path: routeCoordinates.map((item) => ({ lat: item[1], lng: item[0] })),
-        source: url.includes("routing.openstreetmap.de")
-          ? profile === "driving"
-            ? "fossgis-car"
-            : "fossgis-foot"
-          : profile === "driving"
-            ? "project-osrm-car"
-            : "project-osrm-foot"
-      };
-    } catch {
-      continue;
+  try {
+    const response = await fetch(url);
+    if (!response.ok) {
+      return { path: points, source: "fallback-straight" };
     }
-  }
 
-  return { path: points, source: "fallback-straight" };
+    const data = (await response.json()) as {
+      routes?: Array<{ geometry?: { coordinates?: [number, number][] } }>;
+    };
+
+    const routeCoordinates = data.routes?.[0]?.geometry?.coordinates;
+    if (!routeCoordinates || routeCoordinates.length < 2) {
+      return { path: points, source: "fallback-straight" };
+    }
+
+    return {
+      path: routeCoordinates.map((item) => ({ lat: item[1], lng: item[0] })),
+      source: profile === "driving" ? "valhalla-auto" : "valhalla-pedestrian"
+    };
+  } catch {
+    return { path: points, source: "fallback-straight" };
+  }
 }
 
-function getRoutingUrls(profile: "walking" | "driving", coordinateText: string): string[] {
-  const endpoints =
-    profile === "driving"
-      ? [
-          `https://routing.openstreetmap.de/routed-car/route/v1/driving/${coordinateText}?overview=full&geometries=geojson`,
-          `https://router.project-osrm.org/route/v1/driving/${coordinateText}?overview=full&geometries=geojson`
-        ]
-      : [
-          `https://routing.openstreetmap.de/routed-foot/route/v1/walking/${coordinateText}?overview=full&geometries=geojson`,
-          `https://router.project-osrm.org/route/v1/walking/${coordinateText}?overview=full&geometries=geojson`
-        ];
+function getValhallaRouteUrl(
+  profile: "walking" | "driving",
+  points: Array<{ lat: number; lng: number }>
+): string {
+  const payload = {
+    locations: points.map((point) => ({ lat: point.lat, lon: point.lng })),
+    costing: profile === "driving" ? "auto" : "pedestrian",
+    costing_options:
+      profile === "driving"
+        ? {
+            auto: {
+              fixed_speed: 30
+            }
+          }
+        : undefined,
+    format: "osrm",
+    shape_format: "geojson",
+    directions_options: { units: "kilometers" }
+  };
 
-  return endpoints;
+  return `https://valhalla1.openstreetmap.de/route?json=${encodeURIComponent(JSON.stringify(payload))}`;
 }
 
 

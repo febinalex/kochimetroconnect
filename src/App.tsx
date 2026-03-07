@@ -19,6 +19,124 @@ type MapillaryView = "street" | "overview";
 
 const schedule = getScheduleData() as ScheduleRoot;
 const MapView = lazy(() => import("./components/MapView").then((mod) => ({ default: mod.MapView })));
+const FAQS = [
+  {
+    question: "What is Kochi Metro Connect Bus Finder?",
+    answer: (
+      <>
+        <p>
+          Kochi Metro Connect Feeder Bus Finder is a simple web tool that helps you quickly find the next Metro Connect
+          buses from currently 20 stops.
+        </p>
+        <p>
+          It shows upcoming bus departures, travel time, and routes to locations like Kakkanad Water Metro, Infopark
+          Phase I, and other supported MetroConnect links.
+        </p>
+      </>
+    )
+  },
+  {
+    question: "How do I find the next MetroConnect bus?",
+    answer: (
+      <>
+        <p>You can find the next bus in two ways:</p>
+        <ul>
+          <li>Use Current Location to find the nearest Metro Connect stop automatically.</li>
+          <li>Select a stop manually from the dropdown, such as Infopark Phase I.</li>
+        </ul>
+        <p>The website then shows the next 6 upcoming buses for that stop.</p>
+      </>
+    )
+  },
+  {
+    question: "Does this website show real-time bus tracking?",
+    answer: (
+      <p>
+        No. The timings shown here are based on scheduled departure times. Actual arrival can vary depending on traffic
+        and operational delays.
+      </p>
+    )
+  },
+  {
+    question: "Where is the MetroConnect timing data obtained from?",
+    answer: (
+      <>
+        <p>
+          The timing data shown here is collected from official sources and official social media announcements of Kochi
+          Metro.
+        </p>
+        <p>
+          Official timetable reference:{" "}
+          <a href="https://kochimetro.org/feeder-service-time-table/" target="_blank" rel="noreferrer">
+            kochimetro.org/feeder-service-time-table
+          </a>
+        </p>
+        <p>
+          Some routes on the official page can contain incorrect or outdated information for Infopark services. The
+          routes and timings between Infopark Phase I, Infopark Phase II, and Kakkanad Water Metro shown here were
+          verified against the latest available information as of 7 March 2026.
+        </p>
+      </>
+    )
+  },
+  {
+    question: "Which MetroConnect routes are supported?",
+    answer: (
+      <p>
+        The tool currently focuses on 11 route groups across 20 stops. More routes can be added later as timetable
+        coverage improves.
+      </p>
+    )
+  },
+  {
+    question: "Can I see the route map?",
+    answer: (
+      <>
+        <p>Yes. You can enable the map and view the route using providers such as Google Maps, Apple Maps, OpenStreetMap, and Mapillary.</p>
+        <p>The map also helps you navigate to the nearest bus stop when location is enabled.</p>
+      </>
+    )
+  },
+  {
+    question: "Why is the map disabled by default?",
+    answer: (
+      <p>
+        Maps can slow down page loading on some mobile devices. To keep the website fast and lightweight, the map is
+        disabled by default and can be enabled only when needed.
+      </p>
+    )
+  },
+  {
+    question: "How many upcoming buses are shown?",
+    answer: <p>The website displays the next 6 upcoming MetroConnect buses from the selected stop.</p>
+  },
+  {
+    question: "What is the minimum fare for Metro Connect buses?",
+    answer: (
+      <p>
+        The minimum fare is generally ₹20 for the first 5 km, but actual fares can vary by route and operator. For a
+        few direct services, the fare is shown directly on the bus cards.
+      </p>
+    )
+  },
+  {
+    question: "Is this an official Kochi Metro website?",
+    answer: (
+      <p>
+        No. This is an independent informational tool created to help commuters quickly check MetroConnect bus timings.
+      </p>
+    )
+  },
+  {
+    question: "Can I use this website on my phone?",
+    answer: (
+      <p>
+        Yes. The website is mobile-friendly and designed for quick access on smartphones. You can also add it to your
+        home screen for faster access.
+      </p>
+    )
+  }
+] as const;
 
 function App() {
   const [selectedStopId, setSelectedStopId] = useState<StopId | "">("");
@@ -36,8 +154,10 @@ function App() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [selectedBusKey, setSelectedBusKey] = useState<string | null>(null);
   const [selectedBus, setSelectedBus] = useState<UpcomingBus | null>(null);
+  const [showMapPrompt, setShowMapPrompt] = useState(false);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const wasMapEnabledRef = useRef(false);
+  const mapCardRef = useRef<HTMLElement | null>(null);
 
   const selectedStop = selectedStopId ? STOPS[selectedStopId] : null;
 
@@ -72,6 +192,18 @@ function App() {
     }
     wasMapEnabledRef.current = mapEnabled;
   }, [mapEnabled]);
+
+  useEffect(() => {
+    if (!mapEnabled || !selectedBus || typeof window === "undefined" || window.innerWidth > 700) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      mapCardRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 80);
+
+    return () => window.clearTimeout(timer);
+  }, [mapEnabled, selectedBus]);
 
   async function handleAllowLocation(): Promise<void> {
     setLocating(true);
@@ -108,10 +240,44 @@ function App() {
   function handleSelectBus(bus: UpcomingBus): void {
     setSelectedBus(bus);
     setSelectedBusKey(`${bus.routeName}-${bus.originTime}-${bus.destinationTime}`);
+    if (!mapEnabled) {
+      setShowMapPrompt(true);
+    }
   }
 
   return (
     <main className="shell">
+      {showMapPrompt && (
+        <div className="modal-backdrop" role="presentation" onClick={() => setShowMapPrompt(false)}>
+          <div
+            className="modal-card"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="map-enable-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <h2 id="map-enable-title">Enable map to view route</h2>
+            <p>Turn on the map if you want to see the route and markers.</p>
+            <div className="modal-actions">
+              <button type="button" className="secondary-btn" onClick={() => setShowMapPrompt(false)}>
+                Not now
+              </button>
+              <button
+                type="button"
+                className="primary-btn"
+                onClick={() => {
+                  setMapEnabled(true);
+                  setMapProvider("openstreetmap");
+                  setShowMapPrompt(false);
+                }}
+              >
+                Enable map
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <header className="hero">
         <button
           type="button"
@@ -138,9 +304,7 @@ function App() {
             </svg>
           )}
         </button>
-        <h1>Kochi MetroConnect Bus Finder.</h1>
-        <p>Pick a stop or share location. See map route first, then the next buses instantly.</p>
-        <p>Get walking navigation to your nearest stop and the next 6 upcoming metro connects only.</p>
+        <h1>Kochi Metro Connect Feeder Bus Finder</h1>
       </header>
 
       <section className="card control-hub">
@@ -155,7 +319,7 @@ function App() {
         <div className="hub-item">
           <h2>{selectionMode === "location" ? "Nearest Stop Auto detected" : "Manual stop selection"}</h2>
           <StopSelector value={selectedStopId} onChange={handleStopChange} />
-          <p>Use this if you prefer not to share location.</p>
+          {selectionMode !== "location" && <p>Use this if you prefer not to share location.</p>}
         </div>
 
         <div className="hub-item">
@@ -286,7 +450,7 @@ function App() {
       {selectedStop && (
         <section className={`results-layout ${mapEnabled ? "" : "results-layout-no-map"}`.trim()}>
           {mapEnabled && (
-            <section className="card map-card">
+            <section ref={mapCardRef} className="card map-card">
               <div className="map-meta">
                 <div>
                   <h2>{selectedStop.name}</h2>
@@ -347,15 +511,26 @@ function App() {
         </section>
       )}
 
+      <section className="card faq-card">
+        <div className="faq-head">
+          <h2>Frequently Asked Questions</h2>
+          <p>Quick answers about MetroConnect timings, route maps, fares, and data sources.</p>
+        </div>
+        <div className="faq-list">
+          {FAQS.map((item) => (
+            <details key={item.question} className="faq-item">
+              <summary>{item.question}</summary>
+              <div className="faq-answer">{item.answer}</div>
+            </details>
+          ))}
+        </div>
+      </section>
+
       <footer className="card about-card">
-        <h2>About this timetable</h2>
+        <h2>About this Page</h2>
         <p>
-          This page helps you check Kochi Metro Connect feeder bus timings by stop, view upcoming departures, and
-          follow route direction between Infopark, Kakkanad Water Metro, Civil Station, and Kalamassery Metro.
-        </p>
-        <p>
-          Use current location or manual stop selection to quickly see the next buses and choose your preferred map
-          provider when needed.
+          This page helps you check Kochi Metro Connect feeder bus timings by stop, view upcoming departures, and able
+          to see bus routes.
         </p>
       </footer>
     </main>
