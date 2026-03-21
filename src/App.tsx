@@ -36,6 +36,7 @@ interface PersistedSettings {
 const schedule = getScheduleData() as ScheduleRoot;
 const MapView = lazy(() => import("./components/MapView").then((mod) => ({ default: mod.MapView })));
 const SETTINGS_STORAGE_KEY = "kmcfb-settings";
+const ASSET_BASE = import.meta.env.BASE_URL;
 const FAQS = [
   {
     question: "About this Page",
@@ -429,12 +430,12 @@ function App() {
     <main className="shell">
       <header className={`topbar ${headerCompact ? "topbar-compact" : ""}`}>
         <div className="topbar-brand" aria-label="Kochi Metro Connect Feeder Bus Finder">
-          <img className="brand-logo" src="/Metroconnect.png" alt="" aria-hidden="true" />
+          <img className="brand-logo" src={`${ASSET_BASE}Metroconnect.png`} alt="" aria-hidden="true" />
           <span className="brand-full">Kochi Metro Connect Feeder Bus Finder</span>
           <span className="brand-short">KMCFBF</span>
         </div>
         <div className="topbar-actions">
-            <img className="topbar-logo" src="/Metroconnect.png" alt="" aria-hidden="true" />
+            <img className="topbar-logo" src={`${ASSET_BASE}Metroconnect.png`} alt="" aria-hidden="true" />
             <button
               type="button"
               className={`topbar-btn map-toggle-btn ${mapEnabled ? "map-toggle-on" : "map-toggle-off"}`}

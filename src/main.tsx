@@ -30,6 +30,12 @@ if (typeof window !== "undefined" && GOOGLE_ANALYTICS_ID) {
   document.head.appendChild(script);
 }
 
+if (typeof window !== "undefined" && "serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    void navigator.serviceWorker.register(`${import.meta.env.BASE_URL}sw.js`);
+  });
+}
+
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <App />
