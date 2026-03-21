@@ -45,8 +45,10 @@ export function BusCard({ bus, selected, onSelect, nowMs }: BusCardProps) {
       className={`card bus-card ${selected ? "selected-bus" : ""}`}
       onClick={() => onSelect(bus)}
     >
-      <p className="pill">{timeAway}</p>
-      <h3>To {STOPS[bus.destinationStop].shortName}</h3>
+      <div className="bus-card-head">
+        <h3>To {STOPS[bus.destinationStop].shortName}</h3>
+        <p className="pill">{timeAway}</p>
+      </div>
       <p>
         {bus.originTime} to {bus.destinationTime}
       </p>

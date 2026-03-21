@@ -1,17 +1,33 @@
 {
-  "name": "Kochi MetroConnect Bus Finder",
-  "short_name": "MetroConnect",
-  "description": "Live-ready Kochi MetroConnect bus timing and route helper with stop selection, map providers, and walking links.",
-  "start_url": "./",
-  "scope": "./",
+  "name": "Kochi Metro Connect Feeder Bus Finder",
+  "short_name": "Kochi Metro Feeder",
+  "id": "/kochimetroconnect/",
+  "description": "Kochi Metro Connect feeder bus timings, route maps, and nearby stop helper.",
+  "start_url": "/kochimetroconnect/",
+  "scope": "/kochimetroconnect/",
   "display": "standalone",
   "background_color": "#06141f",
   "theme_color": "#0ea5e9",
   "icons": [
     {
-      "src": "./favicon.png",
+      "src": "/kochimetroconnect/favicon.png",
       "sizes": "128x128",
       "type": "image/png"
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "/kochimetroconnect/screenshot-wide.jpg",
+      "sizes": "1280x720",
+      "type": "image/png",
+      "form_factor": "wide",
+      "label": "Desktop view showing feeder bus timings and route helpers"
+    },
+    {
+      "src": "/kochimetroconnect/screenshot-mobile.jpg",
+      "sizes": "720x1280",
+      "type": "image/png",
+      "label": "Mobile view showing feeder bus timings and nearby stop access"
     }
   ]
 }

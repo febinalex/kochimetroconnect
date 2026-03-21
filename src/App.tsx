@@ -9,6 +9,12 @@ import { findNearestStop } from "./lib/nearestStop";
 import { getNowMinutesFromDate } from "./lib/timeUtils";
 import { getLastMissedBus, getUpcomingBuses } from "./lib/nextBus";
 
+declare global {
+  interface Window {
+    gtag?: (...args: unknown[]) => void;
+  }
+}
+
 type SelectionMode = "location" | "manual";
 type MapProvider = "google" | "apple" | "openstreetmap" | "mapillary";
 type ThemeMode = "dark" | "light";
@@ -16,10 +22,30 @@ type GoogleMapType = "roadmap" | "satellite" | "hybrid" | "terrain";
 type OsmLayer = "streets" | "topo" | "hot";
 type AppleMode = "walk" | "drive" | "transit";
 type MapillaryView = "street" | "overview";
+interface PersistedSettings {
+  mapEnabled?: boolean;
+  mapConsentAccepted?: boolean;
+  mapProvider?: MapProvider;
+  googleMapType?: GoogleMapType;
+  osmLayer?: OsmLayer;
+  appleMode?: AppleMode;
+  mapillaryView?: MapillaryView;
+  themeMode?: ThemeMode;
+}
 
 const schedule = getScheduleData() as ScheduleRoot;
 const MapView = lazy(() => import("./components/MapView").then((mod) => ({ default: mod.MapView })));
+const SETTINGS_STORAGE_KEY = "kmcfb-settings";
 const FAQS = [
+  {
+    question: "About this Page",
+    answer: (
+      <p>
+        This page helps you check Kochi Metro Connect feeder bus timings by stop, view upcoming departures, and able
+        to see bus routes.
+      </p>
+    )
+  },
   {
     question: "What is Kochi Metro Connect Bus Finder?",
     answer: (
@@ -138,16 +164,50 @@ const FAQS = [
   }
 ] as const;
 
+function getSavedSettings(): PersistedSettings {
+  if (typeof window === "undefined") {
+    return {};
+  }
+
+  try {
+    const raw = window.localStorage.getItem(SETTINGS_STORAGE_KEY);
+    return raw ? (JSON.parse(raw) as PersistedSettings) : {};
+  } catch {
+    return {};
+  }
+}
+
+function trackEvent(eventName: string, params: Record<string, string | number | boolean>): void {
+  window.gtag?.("event", eventName, params);
+}
+
+function getDistanceBucket(distanceMeters: number): string {
+  if (distanceMeters < 500) {
+    return "<500m";
+  }
+  if (distanceMeters < 1000) {
+    return "500m-1km";
+  }
+  return ">1km";
+}
+
 function App() {
   const [selectedStopId, setSelectedStopId] = useState<StopId | "">("");
   const [selectionMode, setSelectionMode] = useState<SelectionMode | null>(null);
-  const [mapEnabled, setMapEnabled] = useState(false);
-  const [mapProvider, setMapProvider] = useState<MapProvider>("openstreetmap");
-  const [googleMapType, setGoogleMapType] = useState<GoogleMapType>("roadmap");
-  const [osmLayer, setOsmLayer] = useState<OsmLayer>("streets");
-  const [appleMode, setAppleMode] = useState<AppleMode>("walk");
-  const [mapillaryView, setMapillaryView] = useState<MapillaryView>("street");
-  const [themeMode, setThemeMode] = useState<ThemeMode>("dark");
+  const [mapEnabled, setMapEnabled] = useState<boolean>(() => getSavedSettings().mapEnabled ?? false);
+  const [mapConsentAccepted, setMapConsentAccepted] = useState<boolean>(
+    () => getSavedSettings().mapConsentAccepted ?? false
+  );
+  const [mapProvider, setMapProvider] = useState<MapProvider>(() => getSavedSettings().mapProvider ?? "openstreetmap");
+  const [googleMapType, setGoogleMapType] = useState<GoogleMapType>(
+    () => getSavedSettings().googleMapType ?? "roadmap"
+  );
+  const [osmLayer, setOsmLayer] = useState<OsmLayer>(() => getSavedSettings().osmLayer ?? "streets");
+  const [appleMode, setAppleMode] = useState<AppleMode>(() => getSavedSettings().appleMode ?? "walk");
+  const [mapillaryView, setMapillaryView] = useState<MapillaryView>(
+    () => getSavedSettings().mapillaryView ?? "street"
+  );
+  const [themeMode, setThemeMode] = useState<ThemeMode>(() => getSavedSettings().themeMode ?? "dark");
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [distanceMeters, setDistanceMeters] = useState<number | null>(null);
   const [locating, setLocating] = useState(false);
@@ -155,11 +215,29 @@ function App() {
   const [selectedBusKey, setSelectedBusKey] = useState<string | null>(null);
   const [selectedBus, setSelectedBus] = useState<UpcomingBus | null>(null);
   const [showMapPrompt, setShowMapPrompt] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [showFaq, setShowFaq] = useState(false);
+  const [headerCompact, setHeaderCompact] = useState(false);
   const [nowMs, setNowMs] = useState(() => Date.now());
-  const wasMapEnabledRef = useRef(false);
+  const [plannedDateTime, setPlannedDateTime] = useState("");
   const mapCardRef = useRef<HTMLElement | null>(null);
+  const faqRef = useRef<HTMLElement | null>(null);
+  const mapPrefsTrackedRef = useRef(false);
+  const mapVisibilityTrackedRef = useRef(false);
 
   const selectedStop = selectedStopId ? STOPS[selectedStopId] : null;
+  const hasPlannedTime = Boolean(plannedDateTime);
+  const referenceMs =
+    plannedDateTime && !Number.isNaN(new Date(plannedDateTime).getTime()) ? new Date(plannedDateTime).getTime() : nowMs;
+  const isSunday = new Date(referenceMs).getDay() === 0;
+  const currentMapFeature =
+    mapProvider === "google"
+      ? googleMapType
+      : mapProvider === "openstreetmap"
+        ? osmLayer
+        : mapProvider === "apple"
+          ? appleMode
+          : mapillaryView;
 
   useEffect(() => {
     const timer = window.setInterval(() => setNowMs(Date.now()), 1000);
@@ -171,27 +249,40 @@ function App() {
       return [];
     }
 
-    return getUpcomingBuses(getNowMinutesFromDate(new Date(nowMs)), selectedStopId, schedule.routes, 6);
-  }, [nowMs, selectedStopId]);
+    return getUpcomingBuses(getNowMinutesFromDate(new Date(referenceMs)), selectedStopId, schedule.routes, 6);
+  }, [referenceMs, selectedStopId]);
 
   const missedBus = useMemo<MissedBusInfo | null>(() => {
-    if (!selectedStopId) {
+    if (!selectedStopId || plannedDateTime) {
       return null;
     }
 
     return getLastMissedBus(getNowMinutesFromDate(new Date(nowMs)), selectedStopId, schedule.routes, 25);
-  }, [nowMs, selectedStopId]);
+  }, [nowMs, plannedDateTime, selectedStopId]);
 
   useEffect(() => {
     document.body.setAttribute("data-theme", themeMode);
   }, [themeMode]);
 
   useEffect(() => {
-    if (mapEnabled && !wasMapEnabledRef.current) {
-      setMapProvider("openstreetmap");
+    if (typeof window === "undefined") {
+      return;
     }
-    wasMapEnabledRef.current = mapEnabled;
-  }, [mapEnabled]);
+
+    window.localStorage.setItem(
+      SETTINGS_STORAGE_KEY,
+      JSON.stringify({
+        mapEnabled,
+        mapConsentAccepted,
+        mapProvider,
+        googleMapType,
+        osmLayer,
+        appleMode,
+        mapillaryView,
+        themeMode
+      } satisfies PersistedSettings)
+    );
+  }, [appleMode, googleMapType, mapConsentAccepted, mapEnabled, mapProvider, mapillaryView, osmLayer, themeMode]);
 
   useEffect(() => {
     if (!mapEnabled || !selectedBus || typeof window === "undefined" || window.innerWidth > 700) {
@@ -204,6 +295,50 @@ function App() {
 
     return () => window.clearTimeout(timer);
   }, [mapEnabled, selectedBus]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const onScroll = () => {
+      setHeaderCompact(window.scrollY > 48);
+    };
+
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
+
+  useEffect(() => {
+    if (!mapPrefsTrackedRef.current) {
+      mapPrefsTrackedRef.current = true;
+      return;
+    }
+
+    trackEvent("map_preferences_changed", {
+      map_provider: mapProvider,
+      map_feature: currentMapFeature,
+      map_enabled: mapEnabled,
+      location_shared: selectionMode === "location",
+      planned_time_enabled: hasPlannedTime
+    });
+  }, [currentMapFeature, hasPlannedTime, mapEnabled, mapProvider, selectionMode]);
+
+  useEffect(() => {
+    if (!mapVisibilityTrackedRef.current) {
+      mapVisibilityTrackedRef.current = true;
+      return;
+    }
+
+    trackEvent("map_visibility_changed", {
+      map_enabled: mapEnabled,
+      map_provider: mapProvider,
+      map_feature: currentMapFeature,
+      location_shared: selectionMode === "location",
+      planned_time_enabled: hasPlannedTime
+    });
+  }, [currentMapFeature, hasPlannedTime, mapEnabled, mapProvider, selectionMode]);
 
   async function handleAllowLocation(): Promise<void> {
     setLocating(true);
@@ -219,6 +354,16 @@ function App() {
       setDistanceMeters(nearest.distanceMeters);
       setSelectedBus(null);
       setSelectedBusKey(null);
+      trackEvent("location_stop_detected", {
+        nearest_stop_id: nearest.stopId,
+        nearest_stop_name: STOPS[nearest.stopId].name,
+        selection_mode: "location",
+        distance_bucket: getDistanceBucket(nearest.distanceMeters),
+        from_nearest_stop: true,
+        location_shared: true,
+        map_enabled: mapEnabled,
+        planned_time_enabled: hasPlannedTime
+      });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unable to detect location.";
       setErrorMessage(message);
@@ -235,18 +380,132 @@ function App() {
     setErrorMessage(null);
     setSelectedBus(null);
     setSelectedBusKey(null);
+    trackEvent("manual_stop_selected", {
+      selected_stop_id: stopId,
+      selected_stop_name: STOPS[stopId].name,
+      selection_mode: "manual",
+      location_shared: false,
+      map_enabled: mapEnabled,
+      planned_time_enabled: hasPlannedTime
+    });
   }
 
   function handleSelectBus(bus: UpcomingBus): void {
     setSelectedBus(bus);
     setSelectedBusKey(`${bus.routeName}-${bus.originTime}-${bus.destinationTime}`);
+    trackEvent("bus_selected", {
+      route_name: bus.routeName,
+      origin_stop_id: bus.originStop,
+      origin_stop_name: STOPS[bus.originStop].name,
+      destination_stop_id: bus.destinationStop,
+      destination_stop_name: STOPS[bus.destinationStop].name,
+      origin_time: bus.originTime,
+      destination_time: bus.destinationTime,
+      selection_mode: selectionMode ?? "manual",
+      map_enabled: mapEnabled,
+      location_shared: selectionMode === "location",
+      planned_time_enabled: hasPlannedTime
+    });
     if (!mapEnabled) {
       setShowMapPrompt(true);
     }
   }
 
+  function handleToggleMap(): void {
+    if (mapEnabled) {
+      setMapEnabled(false);
+      return;
+    }
+
+    if (!mapConsentAccepted) {
+      setShowMapPrompt(true);
+      return;
+    }
+
+    setMapEnabled(true);
+  }
+
   return (
     <main className="shell">
+      <header className={`topbar ${headerCompact ? "topbar-compact" : ""}`}>
+        <div className="topbar-brand" aria-label="Kochi Metro Connect Feeder Bus Finder">
+          <img className="brand-logo" src="/Metroconnect.png" alt="" aria-hidden="true" />
+          <span className="brand-full">Kochi Metro Connect Feeder Bus Finder</span>
+          <span className="brand-short">KMCFBF</span>
+        </div>
+        <div className="topbar-actions">
+            <img className="topbar-logo" src="/Metroconnect.png" alt="" aria-hidden="true" />
+            <button
+              type="button"
+              className={`topbar-btn map-toggle-btn ${mapEnabled ? "map-toggle-on" : "map-toggle-off"}`}
+              onClick={handleToggleMap}
+              aria-label={mapEnabled ? "Turn map off" : "Turn map on"}
+              title={mapEnabled ? "Turn map off" : "Turn map on"}
+            >
+              <svg className="theme-icon" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M3 6.5 9 4l6 2.5L21 4v13.5L15 20l-6-2.5L3 20V6.5Z" />
+                <path d="M9 4v13.5" />
+                <path d="M15 6.5V20" />
+              </svg>
+              <span>{mapEnabled ? "On" : "Off"}</span>
+            </button>
+            <button
+              type="button"
+              className="topbar-btn"
+            onClick={() => {
+              setShowFaq((prev) => {
+                const next = !prev;
+                if (next) {
+                  window.setTimeout(() => {
+                    faqRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+                  }, 60);
+                }
+                return next;
+              });
+            }}
+          >
+            FAQ
+          </button>
+          <button
+            type="button"
+            className="theme-toggle topbar-btn topbar-icon-btn"
+            onClick={() => setThemeMode((prev) => (prev === "dark" ? "light" : "dark"))}
+            aria-label={themeMode === "dark" ? "Switch to light theme" : "Switch to dark theme"}
+            title={themeMode === "dark" ? "Switch to light theme" : "Switch to dark theme"}
+          >
+            {themeMode === "dark" ? (
+              <svg className="theme-icon" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M21 12.79A9 9 0 1 1 11.21 3a7 7 0 0 0 9.79 9.79z" />
+              </svg>
+            ) : (
+              <svg className="theme-icon" viewBox="0 0 24 24" aria-hidden="true">
+                <circle cx="12" cy="12" r="5" />
+                <line x1="12" y1="1" x2="12" y2="3" />
+                <line x1="12" y1="21" x2="12" y2="23" />
+                <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" />
+                <line x1="18.36" y1="18.36" x2="19.78" y2="19.78" />
+                <line x1="1" y1="12" x2="3" y2="12" />
+                <line x1="21" y1="12" x2="23" y2="12" />
+                <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" />
+                <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
+              </svg>
+            )}
+          </button>
+          <button
+            type="button"
+            className="topbar-btn topbar-icon-btn"
+            aria-label="Open settings"
+            title="Open settings"
+            onClick={() => setShowSettings(true)}
+          >
+            <svg className="theme-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <circle cx="12" cy="12" r="3" />
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 8.92 4.6H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9c.41.24.86.36 1.33.36H21a2 2 0 1 1 0 4h-.27c-.47 0-.92.12-1.33.36Z" />
+            </svg>
+          </button>
+        </div>
+      </header>
+
       {showMapPrompt && (
         <div className="modal-backdrop" role="presentation" onClick={() => setShowMapPrompt(false)}>
           <div
@@ -257,7 +516,7 @@ function App() {
             onClick={(event) => event.stopPropagation()}
           >
             <h2 id="map-enable-title">Enable map to view route</h2>
-            <p>Turn on the map if you want to see the route and markers.</p>
+            <p>Enable the map only when needed. Provider and layer preferences are available from the settings button.</p>
             <div className="modal-actions">
               <button type="button" className="secondary-btn" onClick={() => setShowMapPrompt(false)}>
                 Not now
@@ -266,183 +525,42 @@ function App() {
                 type="button"
                 className="primary-btn"
                 onClick={() => {
+                  setMapConsentAccepted(true);
                   setMapEnabled(true);
-                  setMapProvider("openstreetmap");
                   setShowMapPrompt(false);
                 }}
               >
-                Enable map
+                OK
               </button>
             </div>
           </div>
         </div>
       )}
 
-      <header className="hero">
-        <button
-          type="button"
-          className="theme-toggle"
-          onClick={() => setThemeMode((prev) => (prev === "dark" ? "light" : "dark"))}
-          aria-label={themeMode === "dark" ? "Switch to light theme" : "Switch to dark theme"}
-          title={themeMode === "dark" ? "Switch to light theme" : "Switch to dark theme"}
-        >
-          {themeMode === "dark" ? (
-            <svg className="theme-icon" viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M21 12.79A9 9 0 1 1 11.21 3a7 7 0 0 0 9.79 9.79z" />
-            </svg>
-          ) : (
-            <svg className="theme-icon" viewBox="0 0 24 24" aria-hidden="true">
-              <circle cx="12" cy="12" r="5" />
-              <line x1="12" y1="1" x2="12" y2="3" />
-              <line x1="12" y1="21" x2="12" y2="23" />
-              <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" />
-              <line x1="18.36" y1="18.36" x2="19.78" y2="19.78" />
-              <line x1="1" y1="12" x2="3" y2="12" />
-              <line x1="21" y1="12" x2="23" y2="12" />
-              <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" />
-              <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
-            </svg>
-          )}
-        </button>
-        <h1>Kochi Metro Connect Feeder Bus Finder</h1>
-      </header>
-
       <section className="card control-hub">
         <div className="hub-item">
-          <h2>Use current location</h2>
-          <p>Find the nearest metro connect stop automatically and show a walkable map.</p>
-          <button type="button" onClick={handleAllowLocation} disabled={locating} className="primary-btn">
-            {locating ? "Detecting location..." : "Allow Location"}
-          </button>
-        </div>
-
-        <div className="hub-item">
-          <h2>{selectionMode === "location" ? "Nearest Stop Auto detected" : "Manual stop selection"}</h2>
-          <StopSelector value={selectedStopId} onChange={handleStopChange} />
-          {selectionMode !== "location" && <p>Use this if you prefer not to share location.</p>}
-        </div>
-
-        <div className="hub-item">
-          <h2>Map provider</h2>
-          {!mapEnabled ? (
-            <>
-              <p>Keep map disabled for faster load. Enable only when needed.</p>
-              <button
-                type="button"
-                className="primary-btn"
-                onClick={() => {
-                  setMapProvider("openstreetmap");
-                  setMapEnabled(true);
+          <div className="hub-split">
+            <div className="hub-copy">
+              <h2>{selectionMode === "location" ? "Nearest Stop Auto detected" : "Search stop and plan trip"}</h2>
+              <p>
+                Search a Metro Connect stop, use your location for the nearest stop, or choose a time to plan the next
+                buses.
+              </p>
+            </div>
+            <div className="hub-control">
+              <StopSelector
+                value={selectedStopId}
+                onChange={handleStopChange}
+                onRequestLocation={() => {
+                  void handleAllowLocation();
                 }}
-              >
-                Enable Map
-              </button>
-            </>
-          ) : (
-            <>
-              <p className="option-title">Providers</p>
-              <div className="provider-toggle">
-                {[
-                  ["google", "Google"],
-                  ["apple", "Apple"],
-                  ["openstreetmap", "OpenStreetMap"],
-                  ["mapillary", "Mapillary"]
-                ].map(([id, label]) => (
-                  <button
-                    key={id}
-                    type="button"
-                    className={mapProvider === id ? "active-provider" : ""}
-                    onClick={() => setMapProvider(id as MapProvider)}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-
-              {mapProvider === "google" && (
-                <div className="provider-toggle provider-suboptions">
-                  <p className="option-title">Google view</p>
-                  {(
-                    [
-                      ["roadmap", "Roadmap"],
-                      ["satellite", "Satellite"],
-                      ["hybrid", "Hybrid"],
-                      ["terrain", "Terrain"]
-                    ] as const
-                  ).map(([type, label]) => (
-                    <button
-                      key={type}
-                      type="button"
-                      className={googleMapType === type ? "active-provider" : ""}
-                      onClick={() => setGoogleMapType(type)}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
-              )}
-
-              {mapProvider === "openstreetmap" && (
-                <div className="provider-toggle provider-suboptions">
-                  <p className="option-title">OpenStreetMap layer</p>
-                  {(
-                    [
-                      ["streets", "Streets"],
-                      ["topo", "Topo"],
-                      ["hot", "Hot"]
-                    ] as const
-                  ).map(([layer, label]) => (
-                    <button
-                      key={layer}
-                      type="button"
-                      className={osmLayer === layer ? "active-provider" : ""}
-                      onClick={() => setOsmLayer(layer)}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
-              )}
-
-              {mapProvider === "apple" && (
-                <div className="provider-toggle provider-suboptions">
-                  <p className="option-title">Apple mode</p>
-                  {(["walk", "drive", "transit"] as const).map((mode) => (
-                    <button
-                      key={mode}
-                      type="button"
-                      className={appleMode === mode ? "active-provider" : ""}
-                      onClick={() => setAppleMode(mode)}
-                    >
-                      {mode.charAt(0).toUpperCase() + mode.slice(1)}
-                    </button>
-                  ))}
-                </div>
-              )}
-
-              {mapProvider === "mapillary" && (
-                <div className="provider-toggle provider-suboptions">
-                  <p className="option-title">Mapillary view</p>
-                  {(["street", "overview"] as const).map((view) => (
-                    <button
-                      key={view}
-                      type="button"
-                      className={mapillaryView === view ? "active-provider" : ""}
-                      onClick={() => setMapillaryView(view)}
-                    >
-                      {view.charAt(0).toUpperCase() + view.slice(1)}
-                    </button>
-                  ))}
-                </div>
-              )}
-
-              <button type="button" className="primary-btn" onClick={() => setMapEnabled(false)}>
-                Hide Map
-              </button>
-              <p>Google and OpenStreetMap are embedded. Apple and Mapillary open as external links.</p>
-            </>
-          )}
-        </div>
+                locating={locating}
+                plannedDateTime={plannedDateTime}
+                onPlannedDateTimeChange={setPlannedDateTime}
+              />
+            </div>
+          </div>
+          </div>
 
         {errorMessage && <p className="error-text hub-error">{errorMessage}</p>}
       </section>
@@ -500,39 +618,159 @@ function App() {
             </section>
           )}
 
-          <NextBusList
-            buses={upcomingBuses}
-            selectedBusKey={selectedBusKey}
-            onSelectBus={handleSelectBus}
-            missedBus={missedBus}
-            originStopId={selectedStop.id}
-            nowMs={nowMs}
-          />
+            <NextBusList
+              buses={upcomingBuses}
+              selectedBusKey={selectedBusKey}
+              onSelectBus={handleSelectBus}
+              missedBus={missedBus}
+              originStopId={selectedStop.id}
+              nowMs={referenceMs}
+              plannedDateTime={plannedDateTime}
+              isSunday={isSunday}
+            />
+          </section>
+        )}
+
+      {showFaq && (
+        <section ref={faqRef} className="card faq-card">
+          <div className="faq-head">
+            <h2>Frequently Asked Questions</h2>
+            <p>Quick answers about MetroConnect timings, route maps, fares, and data sources.</p>
+          </div>
+          <div className="faq-list">
+            {FAQS.map((item) => (
+              <details key={item.question} className="faq-item">
+                <summary>{item.question}</summary>
+                <div className="faq-answer">{item.answer}</div>
+              </details>
+            ))}
+          </div>
         </section>
       )}
+      {showSettings && (
+        <div className="modal-backdrop" role="presentation" onClick={() => setShowSettings(false)}>
+          <aside className="settings-drawer" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
+            <div className="settings-head">
+              <div>
+                <h2>Map Settings</h2>
+              </div>
+              <button type="button" className="topbar-btn topbar-icon-btn" onClick={() => setShowSettings(false)}>
+                ×
+              </button>
+            </div>
 
-      <section className="card faq-card">
-        <div className="faq-head">
-          <h2>Frequently Asked Questions</h2>
-          <p>Quick answers about MetroConnect timings, route maps, fares, and data sources.</p>
-        </div>
-        <div className="faq-list">
-          {FAQS.map((item) => (
-            <details key={item.question} className="faq-item">
-              <summary>{item.question}</summary>
-              <div className="faq-answer">{item.answer}</div>
-            </details>
-          ))}
-        </div>
-      </section>
+            <div className="provider-toggle provider-suboptions">
+              <p className="option-title">Providers</p>
+              {[
+                ["google", "Google"],
+                ["apple", "Apple"],
+                ["openstreetmap", "OpenStreetMap"],
+                ["mapillary", "Mapillary"]
+              ].map(([id, label]) => (
+                <button
+                  key={id}
+                  type="button"
+                  className={mapProvider === id ? "active-provider" : ""}
+                  onClick={() => setMapProvider(id as MapProvider)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
 
-      <footer className="card about-card">
-        <h2>About this Page</h2>
-        <p>
-          This page helps you check Kochi Metro Connect feeder bus timings by stop, view upcoming departures, and able
-          to see bus routes.
-        </p>
-      </footer>
+            {mapProvider === "google" && (
+              <div className="provider-toggle provider-suboptions">
+                <p className="option-title">Google view</p>
+                {(
+                  [
+                    ["roadmap", "Roadmap"],
+                    ["satellite", "Satellite"],
+                    ["hybrid", "Hybrid"],
+                    ["terrain", "Terrain"]
+                  ] as const
+                ).map(([type, label]) => (
+                  <button
+                    key={type}
+                    type="button"
+                    className={googleMapType === type ? "active-provider" : ""}
+                    onClick={() => setGoogleMapType(type)}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {mapProvider === "openstreetmap" && (
+              <div className="provider-toggle provider-suboptions">
+                <p className="option-title">OpenStreetMap layer</p>
+                {(
+                  [
+                    ["streets", "Streets"],
+                    ["topo", "Topo"],
+                    ["hot", "Hot"]
+                  ] as const
+                ).map(([layer, label]) => (
+                  <button
+                    key={layer}
+                    type="button"
+                    className={osmLayer === layer ? "active-provider" : ""}
+                    onClick={() => setOsmLayer(layer)}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {mapProvider === "apple" && (
+              <div className="provider-toggle provider-suboptions">
+                <p className="option-title">Apple mode</p>
+                {(["walk", "drive", "transit"] as const).map((mode) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    className={appleMode === mode ? "active-provider" : ""}
+                    onClick={() => setAppleMode(mode)}
+                  >
+                    {mode.charAt(0).toUpperCase() + mode.slice(1)}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {mapProvider === "mapillary" && (
+              <div className="provider-toggle provider-suboptions">
+                <p className="option-title">Mapillary view</p>
+                {(["street", "overview"] as const).map((view) => (
+                  <button
+                    key={view}
+                    type="button"
+                    className={mapillaryView === view ? "active-provider" : ""}
+                    onClick={() => setMapillaryView(view)}
+                  >
+                    {view.charAt(0).toUpperCase() + view.slice(1)}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            <div className="settings-actions">
+              <button
+                type="button"
+                className="primary-btn"
+                onClick={() => {
+                  setMapEnabled(true);
+                  setShowSettings(false);
+                }}
+              >
+                Apply Settings
+              </button>
+              <p>Google and OpenStreetMap are embedded. Apple and Mapillary open as external links.</p>
+            </div>
+          </aside>
+        </div>
+      )}
     </main>
   );
 }

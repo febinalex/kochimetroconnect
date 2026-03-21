@@ -82,7 +82,7 @@ export function MapView({
   const osmBusRouteCasingRef = useRef<SVGPolylineElement | null>(null);
   const osmWalkRouteLineRef = useRef<SVGPolylineElement | null>(null);
   const osmWalkRouteCasingRef = useRef<SVGPolylineElement | null>(null);
-  const animationRef = useRef<number | null>(null);
+  const animationFrameRef = useRef<number | null>(null);
   const osmAnimationTokenRef = useRef(0);
 
   const [googleReady, setGoogleReady] = useState(false);
@@ -522,9 +522,9 @@ export function MapView({
   );
 
   function clearGoogleArtifacts(): void {
-    if (animationRef.current !== null) {
-      window.clearInterval(animationRef.current);
-      animationRef.current = null;
+    if (animationFrameRef.current !== null) {
+      window.cancelAnimationFrame(animationFrameRef.current);
+      animationFrameRef.current = null;
     }
 
     if (googleBusMarkerRef.current) {
@@ -542,9 +542,9 @@ export function MapView({
   function clearOsmArtifacts(): void {
     osmAnimationTokenRef.current += 1;
 
-    if (animationRef.current !== null) {
-      window.clearInterval(animationRef.current);
-      animationRef.current = null;
+    if (animationFrameRef.current !== null) {
+      window.cancelAnimationFrame(animationFrameRef.current);
+      animationFrameRef.current = null;
     }
 
     if (busMarkerRef.current) {
@@ -579,16 +579,25 @@ export function MapView({
       icon: { path: google.maps.SymbolPath.CIRCLE, scale: 0 }
     });
     googleBusMarkerRef.current = marker;
+    const durationMs = Math.max(2600, Math.min(5400, path.length * 7));
+    let startTimestamp: number | null = null;
 
-    let index = 0;
-    const step = path.length > 1200 ? 8 : path.length > 600 ? 6 : path.length > 300 ? 4 : 2;
-    animationRef.current = window.setInterval(() => {
-      marker.setPosition(path[index]);
-      index += step;
-      if (index >= path.length) {
-        index = 0;
+    const animate = (timestamp: number) => {
+      if (!googleBusMarkerRef.current) {
+        return;
       }
-    }, 55);
+
+      if (startTimestamp === null) {
+        startTimestamp = timestamp;
+      }
+
+      const progress = ((timestamp - startTimestamp) % durationMs) / durationMs;
+      const index = Math.min(path.length - 1, Math.floor(progress * path.length));
+      marker.setPosition(path[index]);
+      animationFrameRef.current = window.requestAnimationFrame(animate);
+    };
+
+    animationFrameRef.current = window.requestAnimationFrame(animate);
   }
 
   function startOsmBusAnimation(map: any, path: Array<{ lat: number; lng: number }>): void {
@@ -599,9 +608,9 @@ export function MapView({
     const token = osmAnimationTokenRef.current + 1;
     osmAnimationTokenRef.current = token;
 
-    if (animationRef.current !== null) {
-      window.clearInterval(animationRef.current);
-      animationRef.current = null;
+    if (animationFrameRef.current !== null) {
+      window.cancelAnimationFrame(animationFrameRef.current);
+      animationFrameRef.current = null;
     }
 
     if (busMarkerRef.current) {
@@ -623,15 +632,11 @@ export function MapView({
 
     const marker = new maplibregl.Marker({ element }).setLngLat([path[0].lng, path[0].lat]).addTo(map);
     busMarkerRef.current = marker;
+    const durationMs = Math.max(2600, Math.min(5400, path.length * 7));
+    let startTimestamp: number | null = null;
 
-    let index = 0;
-    const step = path.length > 1200 ? 8 : path.length > 600 ? 6 : path.length > 300 ? 4 : 2;
-    animationRef.current = window.setInterval(() => {
+    const animate = (timestamp: number) => {
       if (osmAnimationTokenRef.current !== token) {
-        if (animationRef.current !== null) {
-          window.clearInterval(animationRef.current);
-          animationRef.current = null;
-        }
         marker.remove();
         return;
       }
@@ -640,12 +645,17 @@ export function MapView({
         return;
       }
 
-      busMarkerRef.current.setLngLat([path[index].lng, path[index].lat]);
-      index += step;
-      if (index >= path.length) {
-        index = 0;
+      if (startTimestamp === null) {
+        startTimestamp = timestamp;
       }
-    }, 55);
+
+      const progress = ((timestamp - startTimestamp) % durationMs) / durationMs;
+      const index = Math.min(path.length - 1, Math.floor(progress * path.length));
+      busMarkerRef.current.setLngLat([path[index].lng, path[index].lat]);
+      animationFrameRef.current = window.requestAnimationFrame(animate);
+    };
+
+    animationFrameRef.current = window.requestAnimationFrame(animate);
   }
 
   function refreshOsmOverlay(): void {
