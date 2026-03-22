@@ -23,6 +23,7 @@ export function StopSelector({
   const [query, setQuery] = useState("");
   const [showPlanner, setShowPlanner] = useState(Boolean(plannedDateTime));
   const rootRef = useRef<HTMLDivElement | null>(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
 
   const filteredStops = Object.values(STOPS).filter((stop) => {
     const normalized = query.trim().toLowerCase();
@@ -59,16 +60,35 @@ export function StopSelector({
     }
   }, [plannedDateTime]);
 
+  function handleInputFocus(): void {
+    setQuery("");
+    setOpen(true);
+
+    if (typeof window !== "undefined" && window.innerWidth <= 700) {
+      window.setTimeout(() => {
+        inputRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }, 120);
+    }
+  }
+
   return (
     <div className="selector-wrap" ref={rootRef}>
       <span>Search bus stop</span>
       <div className="search-select-shell">
         <input
-          type="text"
+          ref={inputRef}
+          type="search"
           className="custom-select-trigger search-input"
           value={query}
           placeholder="Search stops..."
-          onFocus={() => setOpen(true)}
+          inputMode="search"
+          enterKeyHint="search"
+          autoComplete="off"
+          autoCorrect="off"
+          autoCapitalize="words"
+          spellCheck={false}
+          name="kmcfb-stop-search"
+          onFocus={handleInputFocus}
           onChange={(event) => {
             setQuery(event.target.value);
             setOpen(true);

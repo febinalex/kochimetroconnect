@@ -11,7 +11,8 @@ import { getLastMissedBus, getUpcomingBuses } from "./lib/nextBus";
 
 declare global {
   interface Window {
-    gtag?: (...args: unknown[]) => void;
+    dataLayer: any[];
+    gtag: (...args: any[]) => void;
   }
 }
 
@@ -36,6 +37,9 @@ interface PersistedSettings {
 const schedule = getScheduleData() as ScheduleRoot;
 const MapView = lazy(() => import("./components/MapView").then((mod) => ({ default: mod.MapView })));
 const SETTINGS_STORAGE_KEY = "kmcfb-settings";
+const FAQ_READ_COUNT_STORAGE_KEY = "kmcfb-faq-read-count";
+const USAGE_MS_STORAGE_KEY = "kmcfb-usage-ms";
+const SETTINGS_SHORTCUT_USAGE_MS = 5 * 60 * 1000;
 const ASSET_BASE = import.meta.env.BASE_URL;
 const FAQS = [
   {
@@ -192,6 +196,10 @@ function getDistanceBucket(distanceMeters: number): string {
   return ">1km";
 }
 
+function isSundayRestrictedRoute(routeName: string): boolean {
+  return routeName.toLowerCase().includes("infopark");
+}
+
 function App() {
   const [selectedStopId, setSelectedStopId] = useState<StopId | "">("");
   const [selectionMode, setSelectionMode] = useState<SelectionMode | null>(null);
@@ -221,6 +229,22 @@ function App() {
   const [headerCompact, setHeaderCompact] = useState(false);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [plannedDateTime, setPlannedDateTime] = useState("");
+  const [faqReadCount, setFaqReadCount] = useState<number>(() => {
+    if (typeof window === "undefined") {
+      return 0;
+    }
+
+    const stored = Number(window.localStorage.getItem(FAQ_READ_COUNT_STORAGE_KEY) ?? "0");
+    return Number.isFinite(stored) ? stored : 0;
+  });
+  const [usageMs, setUsageMs] = useState<number>(() => {
+    if (typeof window === "undefined") {
+      return 0;
+    }
+
+    const stored = Number(window.localStorage.getItem(USAGE_MS_STORAGE_KEY) ?? "0");
+    return Number.isFinite(stored) ? stored : 0;
+  });
   const mapCardRef = useRef<HTMLElement | null>(null);
   const faqRef = useRef<HTMLElement | null>(null);
   const mapPrefsTrackedRef = useRef(false);
@@ -231,6 +255,10 @@ function App() {
   const referenceMs =
     plannedDateTime && !Number.isNaN(new Date(plannedDateTime).getTime()) ? new Date(plannedDateTime).getTime() : nowMs;
   const isSunday = new Date(referenceMs).getDay() === 0;
+  const activeRoutes = useMemo(
+    () => (isSunday ? schedule.routes.filter((route) => !isSundayRestrictedRoute(route.route)) : schedule.routes),
+    [isSunday]
+  );
   const currentMapFeature =
     mapProvider === "google"
       ? googleMapType
@@ -239,10 +267,57 @@ function App() {
         : mapProvider === "apple"
           ? appleMode
           : mapillaryView;
+  const moveFaqToSettings = faqReadCount >= 2;
+  const moveThemeToSettings = usageMs >= SETTINGS_SHORTCUT_USAGE_MS;
 
   useEffect(() => {
     const timer = window.setInterval(() => setNowMs(Date.now()), 1000);
     return () => window.clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    let intervalId: number | null = null;
+
+    const startTracking = () => {
+      if (document.hidden || intervalId !== null) {
+        return;
+      }
+
+      intervalId = window.setInterval(() => {
+        setUsageMs((previous) => {
+          const next = previous + 15000;
+          window.localStorage.setItem(USAGE_MS_STORAGE_KEY, String(next));
+          return next;
+        });
+      }, 15000);
+    };
+
+    const stopTracking = () => {
+      if (intervalId !== null) {
+        window.clearInterval(intervalId);
+        intervalId = null;
+      }
+    };
+
+    const handleVisibility = () => {
+      if (document.hidden) {
+        stopTracking();
+      } else {
+        startTracking();
+      }
+    };
+
+    startTracking();
+    document.addEventListener("visibilitychange", handleVisibility);
+
+    return () => {
+      stopTracking();
+      document.removeEventListener("visibilitychange", handleVisibility);
+    };
   }, []);
 
   const upcomingBuses = useMemo(() => {
@@ -250,16 +325,16 @@ function App() {
       return [];
     }
 
-    return getUpcomingBuses(getNowMinutesFromDate(new Date(referenceMs)), selectedStopId, schedule.routes, 6);
-  }, [referenceMs, selectedStopId]);
+    return getUpcomingBuses(getNowMinutesFromDate(new Date(referenceMs)), selectedStopId, activeRoutes, 6);
+  }, [activeRoutes, referenceMs, selectedStopId]);
 
   const missedBus = useMemo<MissedBusInfo | null>(() => {
     if (!selectedStopId || plannedDateTime) {
       return null;
     }
 
-    return getLastMissedBus(getNowMinutesFromDate(new Date(nowMs)), selectedStopId, schedule.routes, 25);
-  }, [nowMs, plannedDateTime, selectedStopId]);
+    return getLastMissedBus(getNowMinutesFromDate(new Date(nowMs)), selectedStopId, activeRoutes, 25);
+  }, [activeRoutes, nowMs, plannedDateTime, selectedStopId]);
 
   useEffect(() => {
     document.body.setAttribute("data-theme", themeMode);
@@ -426,6 +501,30 @@ function App() {
     setMapEnabled(true);
   }
 
+  function handleToggleFaq(): void {
+    setShowFaq((previous) => {
+      const next = !previous;
+
+      if (next) {
+        window.setTimeout(() => {
+          faqRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+        }, 60);
+      }
+
+      return next;
+    });
+  }
+
+  function recordFaqRead(): void {
+    setFaqReadCount((previous) => {
+      const next = previous + 1;
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem(FAQ_READ_COUNT_STORAGE_KEY, String(next));
+      }
+      return next;
+    });
+  }
+
   return (
     <main className="shell">
       <header className={`topbar ${headerCompact ? "topbar-compact" : ""}`}>
@@ -450,48 +549,42 @@ function App() {
               </svg>
               <span>{mapEnabled ? "On" : "Off"}</span>
             </button>
+          {!moveFaqToSettings && (
             <button
               type="button"
               className="topbar-btn"
-            onClick={() => {
-              setShowFaq((prev) => {
-                const next = !prev;
-                if (next) {
-                  window.setTimeout(() => {
-                    faqRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-                  }, 60);
-                }
-                return next;
-              });
-            }}
-          >
-            FAQ
-          </button>
-          <button
-            type="button"
-            className="theme-toggle topbar-btn topbar-icon-btn"
-            onClick={() => setThemeMode((prev) => (prev === "dark" ? "light" : "dark"))}
-            aria-label={themeMode === "dark" ? "Switch to light theme" : "Switch to dark theme"}
-            title={themeMode === "dark" ? "Switch to light theme" : "Switch to dark theme"}
-          >
-            {themeMode === "dark" ? (
-              <svg className="theme-icon" viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M21 12.79A9 9 0 1 1 11.21 3a7 7 0 0 0 9.79 9.79z" />
-              </svg>
-            ) : (
-              <svg className="theme-icon" viewBox="0 0 24 24" aria-hidden="true">
-                <circle cx="12" cy="12" r="5" />
-                <line x1="12" y1="1" x2="12" y2="3" />
-                <line x1="12" y1="21" x2="12" y2="23" />
-                <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" />
-                <line x1="18.36" y1="18.36" x2="19.78" y2="19.78" />
-                <line x1="1" y1="12" x2="3" y2="12" />
-                <line x1="21" y1="12" x2="23" y2="12" />
-                <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" />
-                <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
-              </svg>
-            )}
-          </button>
+              onClick={handleToggleFaq}
+            >
+              FAQ
+            </button>
+          )}
+          {!moveThemeToSettings && (
+            <button
+              type="button"
+              className="theme-toggle topbar-btn topbar-icon-btn"
+              onClick={() => setThemeMode((prev) => (prev === "dark" ? "light" : "dark"))}
+              aria-label={themeMode === "dark" ? "Switch to light theme" : "Switch to dark theme"}
+              title={themeMode === "dark" ? "Switch to light theme" : "Switch to dark theme"}
+            >
+              {themeMode === "dark" ? (
+                <svg className="theme-icon" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M21 12.79A9 9 0 1 1 11.21 3a7 7 0 0 0 9.79 9.79z" />
+                </svg>
+              ) : (
+                <svg className="theme-icon" viewBox="0 0 24 24" aria-hidden="true">
+                  <circle cx="12" cy="12" r="5" />
+                  <line x1="12" y1="1" x2="12" y2="3" />
+                  <line x1="12" y1="21" x2="12" y2="23" />
+                  <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" />
+                  <line x1="18.36" y1="18.36" x2="19.78" y2="19.78" />
+                  <line x1="1" y1="12" x2="3" y2="12" />
+                  <line x1="21" y1="12" x2="23" y2="12" />
+                  <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" />
+                  <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
+                </svg>
+              )}
+            </button>
+          )}
           <button
             type="button"
             className="topbar-btn topbar-icon-btn"
@@ -641,7 +734,7 @@ function App() {
           <div className="faq-list">
             {FAQS.map((item) => (
               <details key={item.question} className="faq-item">
-                <summary>{item.question}</summary>
+                <summary onClick={recordFaqRead}>{item.question}</summary>
                 <div className="faq-answer">{item.answer}</div>
               </details>
             ))}
@@ -753,6 +846,42 @@ function App() {
                     {view.charAt(0).toUpperCase() + view.slice(1)}
                   </button>
                 ))}
+              </div>
+            )}
+
+            {moveThemeToSettings && (
+              <div className="provider-toggle provider-suboptions">
+                <p className="option-title">Theme</p>
+                {(["dark", "light"] as const).map((mode) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    className={themeMode === mode ? "active-provider" : ""}
+                    onClick={() => setThemeMode(mode)}
+                  >
+                    {mode.charAt(0).toUpperCase() + mode.slice(1)}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {moveFaqToSettings && (
+              <div className="settings-actions">
+                <button
+                  type="button"
+                  className="secondary-btn"
+                  onClick={() => {
+                    setShowSettings(false);
+                    if (!showFaq) {
+                      setShowFaq(true);
+                    }
+                    window.setTimeout(() => {
+                      faqRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+                    }, 80);
+                  }}
+                >
+                  Open FAQ
+                </button>
               </div>
             )}
 

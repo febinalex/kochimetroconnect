@@ -36,12 +36,19 @@ export function NextBusList({
         hour12: true
       })
     : null;
+  const subheading = plannedLabel
+    ? buses.length > 0
+      ? `Showing next departures from selected time: ${plannedLabel}`
+      : `No departures found from selected time: ${plannedLabel}`
+    : buses.length > 0
+      ? `Showing next ${Math.min(6, buses.length)} departures`
+      : "No departures scheduled from this stop right now.";
 
   return (
     <section className="list-section">
       <div className="section-head">
         <h2>Upcoming Buses</h2>
-        <p>{plannedLabel ? `Showing next departures from selected time: ${plannedLabel}` : `Showing next ${Math.min(6, buses.length)} departures`}</p>
+        <p>{subheading}</p>
       </div>
       {isSunday && (
         <div className="card sunday-note">
