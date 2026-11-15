@@ -48,6 +48,7 @@ export interface UpcomingBus {
   destinationStop: StopId;
   destinationIndex: number;
   destinationTime: string;
+  stopTimes: Array<{ stopId: StopId; time: string }>;
   minutesAway: number;
 }
 

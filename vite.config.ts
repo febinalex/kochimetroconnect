@@ -82,6 +82,7 @@ function manifestPlugin(): Plugin {
 }
 
 export default defineConfig({
+  server: { host: "localhost", port: 5173, strictPort: true },
   plugins: [react(), manifestPlugin()],
   base:
     process.env.GITHUB_ACTIONS === "true" && process.env.GITHUB_REPOSITORY

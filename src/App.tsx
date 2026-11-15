@@ -8,6 +8,7 @@ import { getCurrentPosition } from "./lib/geolocation";
 import { findNearestStop } from "./lib/nearestStop";
 import { getNowMinutesFromDate } from "./lib/timeUtils";
 import { getLastMissedBus, getUpcomingBuses } from "./lib/nextBus";
+import { ContributionChat } from "./components/ContributionChat";
 
 declare global {
   interface Window {
@@ -35,8 +36,10 @@ interface PersistedSettings {
 }
 
 const schedule = getScheduleData() as ScheduleRoot;
+const CONTRIBUTION_STOPS = Array.from(new Set(Object.values(STOPS).map((stop) => stop.name)));
+const CONTRIBUTION_ROUTES = Array.from(new Set(schedule.routes.map((route) => route.route)));
 const MapView = lazy(() => import("./components/MapView").then((mod) => ({ default: mod.MapView })));
-const SETTINGS_STORAGE_KEY = "kmcfb-settings";
+const SETTINGS_STORAGE_KEY = "kochitransit-preferences-v1";
 const FAQ_READ_COUNT_STORAGE_KEY = "kmcfb-faq-read-count";
 const USAGE_MS_STORAGE_KEY = "kmcfb-usage-ms";
 const SETTINGS_SHORTCUT_USAGE_MS = 5 * 60 * 1000;
@@ -175,6 +178,16 @@ function getSavedSettings(): PersistedSettings {
   }
 
   try {
+    const params = new URLSearchParams(window.location.search);
+    const incoming = params.get("preferences");
+    if (incoming) {
+      const shared = JSON.parse(incoming) as PersistedSettings;
+      window.localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(shared));
+      params.delete("preferences");
+      const rest = params.toString();
+      window.history.replaceState({}, "", `${window.location.pathname}${rest ? `?${rest}` : ""}${window.location.hash}`);
+      return shared;
+    }
     const raw = window.localStorage.getItem(SETTINGS_STORAGE_KEY);
     return raw ? (JSON.parse(raw) as PersistedSettings) : {};
   } catch {
@@ -223,6 +236,7 @@ function App() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [selectedBusKey, setSelectedBusKey] = useState<string | null>(null);
   const [selectedBus, setSelectedBus] = useState<UpcomingBus | null>(null);
+  const [expandedBusKey, setExpandedBusKey] = useState<string | null>(null);
   const [showMapPrompt, setShowMapPrompt] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showFaq, setShowFaq] = useState(false);
@@ -341,6 +355,24 @@ function App() {
   }, [themeMode]);
 
   useEffect(() => {
+    const handleSharedPreferences = (event: StorageEvent) => {
+      if (event.key !== SETTINGS_STORAGE_KEY) return;
+      let saved: PersistedSettings = {};
+      try { saved = event.newValue ? JSON.parse(event.newValue) as PersistedSettings : {}; } catch { return; }
+      setMapEnabled(saved.mapEnabled ?? false);
+      setMapConsentAccepted(saved.mapConsentAccepted ?? false);
+      setMapProvider(saved.mapProvider ?? "openstreetmap");
+      setGoogleMapType(saved.googleMapType ?? "roadmap");
+      setOsmLayer(saved.osmLayer ?? "streets");
+      setAppleMode(saved.appleMode ?? "walk");
+      setMapillaryView(saved.mapillaryView ?? "street");
+      setThemeMode(saved.themeMode ?? "dark");
+    };
+    window.addEventListener("storage", handleSharedPreferences);
+    return () => window.removeEventListener("storage", handleSharedPreferences);
+  }, []);
+
+  useEffect(() => {
     if (typeof window === "undefined") {
       return;
     }
@@ -379,6 +411,7 @@ function App() {
 
     const onScroll = () => {
       setHeaderCompact(window.scrollY > 48);
+      document.documentElement.style.setProperty("--page-parallax", `${Math.min(window.scrollY, 180) * 0.08}px`);
     };
 
     onScroll();
@@ -430,6 +463,7 @@ function App() {
       setDistanceMeters(nearest.distanceMeters);
       setSelectedBus(null);
       setSelectedBusKey(null);
+      setExpandedBusKey(null);
       trackEvent("location_stop_detected", {
         nearest_stop_id: nearest.stopId,
         nearest_stop_name: STOPS[nearest.stopId].name,
@@ -456,6 +490,7 @@ function App() {
     setErrorMessage(null);
     setSelectedBus(null);
     setSelectedBusKey(null);
+    setExpandedBusKey(null);
     trackEvent("manual_stop_selected", {
       selected_stop_id: stopId,
       selected_stop_name: STOPS[stopId].name,
@@ -526,7 +561,7 @@ function App() {
   }
 
   return (
-    <main className="shell">
+    <main className="shell app-frame">
       <header className={`topbar ${headerCompact ? "topbar-compact" : ""}`}>
         <div className="topbar-brand" aria-label="Kochi Metro Connect Feeder Bus Finder">
           <img className="brand-logo" src={`${ASSET_BASE}Metroconnect.png`} alt="" aria-hidden="true" />
@@ -600,6 +635,23 @@ function App() {
         </div>
       </header>
 
+      <section className="welcome-band" aria-labelledby="page-title">
+        <div className="welcome-copy">
+          <h1 id="page-title">Find your next bus.</h1>
+          <p>Choose a stop to see the next scheduled MetroConnect departures.</p>
+        </div>
+        <div className="welcome-actions">
+          <a className="site-switch-link" href={import.meta.env.DEV ? "http://localhost:5174/" : "https://febinalex.github.io/infoparkbuses/"} onClick={(event) => {
+            if (!import.meta.env.DEV) return;
+            event.preventDefault();
+            const preferences = JSON.stringify({ mapEnabled, mapConsentAccepted, mapProvider, googleMapType, osmLayer, appleMode, mapillaryView, themeMode });
+            window.location.href = `http://localhost:5174/?preferences=${encodeURIComponent(preferences)}`;
+          }}>
+            Infopark public buses <span aria-hidden="true">↗</span>
+          </a>
+        </div>
+      </section>
+
       {showMapPrompt && (
         <div className="modal-backdrop" role="presentation" onClick={() => setShowMapPrompt(false)}>
           <div
@@ -631,36 +683,56 @@ function App() {
         </div>
       )}
 
-      <section className="card control-hub">
-        <div className="hub-item">
-          <div className="hub-split">
-            <div className="hub-copy">
-              <h2>{selectionMode === "location" ? "Nearest Stop Auto detected" : "Search stop and plan trip"}</h2>
-              <p>
-                Search a Metro Connect stop, use your location for the nearest stop, or choose a time to plan the next
-                buses.
-              </p>
-            </div>
-            <div className="hub-control">
-              <StopSelector
-                value={selectedStopId}
-                onChange={handleStopChange}
-                onRequestLocation={() => {
-                  void handleAllowLocation();
-                }}
-                locating={locating}
-                plannedDateTime={plannedDateTime}
-                onPlannedDateTimeChange={setPlannedDateTime}
-              />
-            </div>
+      <section className="card control-hub trip-planner" aria-labelledby="planner-title">
+        <div className="planner-intro">
+          <span className="step-mark">01</span>
+          <div className="hub-copy">
+            <h2 id="planner-title">Where are you boarding?</h2>
+            <p>Search a stop or use your current location. You can also plan for a later time.</p>
           </div>
-          </div>
-
-        {errorMessage && <p className="error-text hub-error">{errorMessage}</p>}
+        </div>
+        <div className="hub-control">
+          <StopSelector
+            value={selectedStopId}
+            onChange={handleStopChange}
+            onRequestLocation={() => { void handleAllowLocation(); }}
+            locating={locating}
+            plannedDateTime={plannedDateTime}
+            onPlannedDateTimeChange={setPlannedDateTime}
+          />
+        </div>
+        {errorMessage && <p className="error-text hub-error" role="alert">{errorMessage}</p>}
       </section>
 
       {selectedStop && (
-        <section className={`results-layout ${mapEnabled ? "" : "results-layout-no-map"}`.trim()}>
+        <section className={`results-layout journey-workspace ${mapEnabled ? "" : "results-layout-no-map"}`.trim()} aria-label={`Departures from ${selectedStop.name}`}>
+          <div className="journey-heading">
+            <span className="step-mark">02</span>
+            <div>
+              <p className="journey-context">{selectionMode === "location" ? "Nearest stop" : "Selected stop"}</p>
+              <h2>{selectedStop.name}</h2>
+              <p className="journey-distance">
+                {selectionMode === "location" && distanceMeters !== null
+                  ? `${(distanceMeters / 1000).toFixed(2)} km from your location`
+                  : "Scheduled feeder departures"}
+              </p>
+            </div>
+          </div>
+          <NextBusList
+            buses={upcomingBuses}
+            selectedBusKey={selectedBusKey}
+            expandedBusKey={expandedBusKey}
+            onSelectBus={handleSelectBus}
+            onToggleDetails={(bus) => {
+              const key = `${bus.routeName}-${bus.originTime}-${bus.destinationTime}`;
+              setExpandedBusKey((current) => current === key ? null : key);
+            }}
+            missedBus={missedBus}
+            originStopId={selectedStop.id}
+            nowMs={referenceMs}
+            plannedDateTime={plannedDateTime}
+            isSunday={isSunday}
+          />
           {mapEnabled && (
             <section ref={mapCardRef} className="card map-card">
               <div className="map-meta">
@@ -694,7 +766,7 @@ function App() {
                 </div>
               </div>
 
-              <Suspense fallback={<div className="map-fallback provider-panel">Loading map module...</div>}>
+              <Suspense fallback={<div className="map-fallback provider-panel map-loading">Loading map module...</div>}>
                 <MapView
                   key={`${mapProvider}-${googleMapType}-${osmLayer}-${appleMode}-${mapillaryView}`}
                   provider={mapProvider}
@@ -712,18 +784,18 @@ function App() {
             </section>
           )}
 
-            <NextBusList
-              buses={upcomingBuses}
-              selectedBusKey={selectedBusKey}
-              onSelectBus={handleSelectBus}
-              missedBus={missedBus}
-              originStopId={selectedStop.id}
-              nowMs={referenceMs}
-              plannedDateTime={plannedDateTime}
-              isSunday={isSunday}
-            />
-          </section>
+        </section>
         )}
+
+      {!selectedStop && (
+        <section className="empty-welcome" aria-live="polite">
+          <span className="empty-route-line" aria-hidden="true" />
+          <div>
+            <h2>Your departures will appear here</h2>
+            <p>Select a boarding stop above to check scheduled buses and route details.</p>
+          </div>
+        </section>
+      )}
 
       {showFaq && (
         <section ref={faqRef} className="card faq-card">
@@ -901,6 +973,7 @@ function App() {
           </aside>
         </div>
       )}
+      <ContributionChat appName="Kochi Metro Connect" stops={CONTRIBUTION_STOPS} routes={CONTRIBUTION_ROUTES} />
     </main>
   );
 }

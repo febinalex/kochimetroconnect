@@ -4,6 +4,16 @@ export function parseTimeToMinutes(value: string): number {
   return hh * 60 + mm;
 }
 
+export function formatScheduleTime(value: string): string {
+  const cleaned = value.trim();
+  const match = cleaned.match(/^(\d{1,2}):(\d{2})(\*)?$/);
+  if (!match) return value;
+  const hour = Number(match[1]);
+  const period = hour >= 12 ? "PM" : "AM";
+  const displayHour = hour % 12 || 12;
+  return `${displayHour}:${match[2]} ${period}${match[3] ?? ""}`;
+}
+
 export function formatMinutesAway(minutes: number): string {
   if (minutes < 60) {
     return `in ${minutes} min`;

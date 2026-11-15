@@ -269,7 +269,7 @@ export function MapView({
     const busStopMarker = new google.maps.Marker({
       map,
       position: { lat: originStop.lat, lng: originStop.lng },
-      title: `Bus stop: ${originStop.name}`,
+      title: `Bus stop: ${originStop.name} (${originStop.lat.toFixed(6)}, ${originStop.lng.toFixed(6)})`,
       icon: {
         path: google.maps.SymbolPath.CIRCLE,
         scale: 9,
@@ -285,7 +285,7 @@ export function MapView({
     const destinationMarker = new google.maps.Marker({
       map,
       position: { lat: destinationStop.lat, lng: destinationStop.lng },
-      title: `Destination: ${destinationStop.name}`,
+      title: `Destination: ${destinationStop.name} (${destinationStop.lat.toFixed(6)}, ${destinationStop.lng.toFixed(6)})`,
       icon: {
         path: google.maps.SymbolPath.CIRCLE,
         scale: 9,
@@ -392,14 +392,14 @@ export function MapView({
 
     const stopMarker = new maplibregl.Marker({ color: "#22c55e" })
       .setLngLat([originStop.lng, originStop.lat])
-      .setPopup(new maplibregl.Popup({ offset: 12 }).setText(`Bus stop: ${originStop.name}`))
+      .setPopup(new maplibregl.Popup({ offset: 12 }).setText(`Bus stop: ${originStop.name} · ${originStop.lat.toFixed(6)}, ${originStop.lng.toFixed(6)}`))
       .addTo(map);
     osmMarkersRef.current.push(stopMarker);
     bounds.extend([originStop.lng, originStop.lat]);
 
     const destinationMarker = new maplibregl.Marker({ color: "#ef4444" })
       .setLngLat([destinationStop.lng, destinationStop.lat])
-      .setPopup(new maplibregl.Popup({ offset: 12 }).setText(`Destination: ${destinationStop.name}`))
+      .setPopup(new maplibregl.Popup({ offset: 12 }).setText(`Destination: ${destinationStop.name} · ${destinationStop.lat.toFixed(6)}, ${destinationStop.lng.toFixed(6)}`))
       .addTo(map);
     osmMarkersRef.current.push(destinationMarker);
     bounds.extend([destinationStop.lng, destinationStop.lat]);

@@ -114,6 +114,10 @@ export function getUpcomingBuses(
         destinationStop: destination.stopId,
         destinationIndex: destination.stopIndex,
         destinationTime,
+        stopTimes: routeStops.slice(originIndex, destination.stopIndex + 1).flatMap((stopId) => {
+          const time = timing[stopId];
+          return time ? [{ stopId, time }] : [];
+        }),
         minutesAway
       });
     });

@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <defs><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#102435"/><stop offset="1" stop-color="#0d1721"/></linearGradient><linearGradient id="rail" x1="0" x2="1"><stop stop-color="#67c8e8"/><stop offset="1" stop-color="#3e8ed0"/></linearGradient><pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse"><path d="M40 0H0V40" fill="none" stroke="#d9eff5" stroke-opacity=".045"/></pattern></defs>
+  <rect width="1200" height="630" fill="url(#bg)"/><rect width="1200" height="630" fill="url(#grid)"/>
+  <circle cx="1000" cy="120" r="300" fill="#43a5d8" opacity=".08"/>
+  <g transform="translate(82 76)"><rect width="64" height="64" rx="16" fill="#287cb9"/><path d="M19 12h26a6 6 0 0 1 6 6v29H13V18a6 6 0 0 1 6-6Z" fill="#eef7fa"/><path d="M19 20h26v13H19z" fill="#183247"/><path d="M18 40h28M21 47v4m22-4v4" stroke="#183247" stroke-width="3" stroke-linecap="round"/></g>
+  <text x="170" y="118" fill="#d3e8f1" font-family="Arial,sans-serif" font-size="19" font-weight="700" letter-spacing="3">KOCHI METRO CONNECT</text>
+  <text x="82" y="260" fill="#f3f7fa" font-family="Arial,sans-serif" font-size="68" font-weight="700" letter-spacing="-2">Your next feeder bus,</text>
+  <text x="82" y="340" fill="#67c8e8" font-family="Arial,sans-serif" font-size="68" font-weight="700" letter-spacing="-2">made easy to find.</text>
+  <text x="86" y="399" fill="#b3c5cf" font-family="Arial,sans-serif" font-size="25">Stop-wise schedules, nearby stops and route maps.</text>
+  <g transform="translate(660 455)"><path d="M0 0c87 0 83 90 182 90s92-126 190-126 89 65 183 65" fill="none" stroke="#67c8e8" stroke-opacity=".12" stroke-width="25" stroke-linecap="round"/><path d="M0 0c87 0 83 90 182 90s92-126 190-126 89 65 183 65" fill="none" stroke="url(#rail)" stroke-width="6" stroke-linecap="round"/><g fill="#122434" stroke="#67c8e8" stroke-width="5"><circle r="13" cx="0"/><circle r="13" cx="182" cy="90"/><circle r="13" cx="372" cy="-36"/><circle r="13" cx="555" cy="29"/></g></g>
+  <text x="82" y="558" fill="#90a8b5" font-family="Arial,sans-serif" font-size="17" letter-spacing="2">KOCHI · FEEDER BUS TIMETABLE</text>
+</svg>

@@ -1,11 +1,14 @@
 import type { MissedBusInfo, StopId, UpcomingBus } from "../types/bus";
 import { BusCard } from "./BusCard";
 import { STOPS } from "../data/stops";
+import { formatScheduleTime } from "../lib/timeUtils";
 
 interface NextBusListProps {
   buses: UpcomingBus[];
   selectedBusKey: string | null;
+  expandedBusKey: string | null;
   onSelectBus: (bus: UpcomingBus) => void;
+  onToggleDetails: (bus: UpcomingBus) => void;
   missedBus: MissedBusInfo | null;
   originStopId: StopId;
   nowMs: number;
@@ -20,7 +23,9 @@ function busKey(bus: UpcomingBus): string {
 export function NextBusList({
   buses,
   selectedBusKey,
+  expandedBusKey,
   onSelectBus,
+  onToggleDetails,
   missedBus,
   originStopId,
   nowMs,
@@ -58,11 +63,11 @@ export function NextBusList({
       )}
       {missedBus && (
         <div className="card missed-note">
-          Oh you just missed this bus: <strong>{missedBus.originTime}</strong> ({missedBus.minutesAgo} min ago)
+          Oh you just missed this bus: <strong>{formatScheduleTime(missedBus.originTime)}</strong> ({missedBus.minutesAgo} min ago)
           <br />
           From <strong>{STOPS[originStopId].shortName}</strong> to <strong>{STOPS[missedBus.destinationStop].shortName}</strong>
           <br />
-          {missedBus.originTime} to {missedBus.destinationTime}
+          {formatScheduleTime(missedBus.originTime)} to {formatScheduleTime(missedBus.destinationTime)}
         </div>
       )}
       {buses.length === 0 ? (
@@ -74,7 +79,9 @@ export function NextBusList({
               key={`${bus.routeName}-${bus.originTime}-${bus.destinationTime}-${index}`}
               bus={bus}
               selected={selectedBusKey === busKey(bus)}
+              expanded={expandedBusKey === busKey(bus)}
               onSelect={onSelectBus}
+              onToggleDetails={() => onToggleDetails(bus)}
               nowMs={nowMs}
             />
           ))}

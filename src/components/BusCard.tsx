@@ -1,11 +1,13 @@
 ﻿import type { UpcomingBus } from "../types/bus";
 import { STOPS } from "../data/stops";
-import { formatTimeAway, getSecondsUntilTime } from "../lib/timeUtils";
+import { formatScheduleTime, formatTimeAway, getSecondsUntilTime } from "../lib/timeUtils";
 
 interface BusCardProps {
   bus: UpcomingBus;
   selected: boolean;
+  expanded: boolean;
   onSelect: (bus: UpcomingBus) => void;
+  onToggleDetails: () => void;
   nowMs: number;
 }
 
@@ -34,27 +36,25 @@ function getRouteSegment(bus: UpcomingBus): string {
     .join("  →  ");
 }
 
-export function BusCard({ bus, selected, onSelect, nowMs }: BusCardProps) {
+export function BusCard({ bus, selected, expanded, onSelect, onToggleDetails, nowMs }: BusCardProps) {
   const secondsAway = getSecondsUntilTime(bus.originTime, new Date(nowMs));
   const timeAway = formatTimeAway(secondsAway);
   const minimumCharge = getMinimumCharge(bus);
 
   return (
-    <button
-      type="button"
-      className={`card bus-card ${selected ? "selected-bus" : ""}`}
-      onClick={() => onSelect(bus)}
-    >
-      <div className="bus-card-head">
-        <h3>To {STOPS[bus.destinationStop].shortName}</h3>
-        <p className="pill">{timeAway}</p>
-      </div>
-      <p>
-        {bus.originTime} to {bus.destinationTime}
-      </p>
-      <p className="route-label">{getRouteSegment(bus)}</p>
-      <p className="fare-note">Minimum charge: ₹{minimumCharge}</p>
-    </button>
+    <article className={`card bus-card ${selected ? "selected-bus" : ""} ${expanded ? "bus-card-expanded" : ""}`}>
+      <button type="button" className="bus-card-select" onClick={() => onSelect(bus)}>
+        <div className="bus-card-head">
+          <h3>To {STOPS[bus.destinationStop].shortName}</h3>
+          <p className="pill">{timeAway}</p>
+        </div>
+        <p>{formatScheduleTime(bus.originTime)} to {formatScheduleTime(bus.destinationTime)}</p>
+        <p className="route-label">{getRouteSegment(bus)}</p>
+        <p className="fare-note">Minimum charge: ₹{minimumCharge}</p>
+      </button>
+      <button type="button" className="bus-details-toggle" onClick={onToggleDetails} aria-expanded={expanded} aria-label={expanded ? "Hide route stop times" : "Show route stop times"}>{expanded ? "−" : "+"}</button>
+      {expanded && <div className="bus-stop-times">{bus.stopTimes.map((stop, index) => <div className="bus-stop-time" key={`${stop.stopId}-${index}`}><span className={index === 0 || index === bus.stopTimes.length - 1 ? "bus-stop-node bus-stop-node-end" : "bus-stop-node"} /><span>{STOPS[stop.stopId].shortName}</span><time>{formatScheduleTime(stop.time)}</time></div>)}</div>}
+    </article>
   );
 }
 
